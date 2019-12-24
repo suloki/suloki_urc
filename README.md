@@ -1,6 +1,7 @@
 suloki的官方网站是 http://www.suloki.com/
 suloki的头条文章是 https://www.toutiao.com/a6751207017316090372/
 版本：1.9.0.1
+suloki的官方邮件是 suloki@aliyun.com
 suloki URC软件是完全依据上述资料文章的URC软件架构理论建立的软件，软件功能如下：
 1，支持分布式架构：URC框架软件可以配置为URC服务和业务服务2种角色，从而构成以客户端-业务服务-URC服务的三层分布式系统架构；
 2，支持插件式开发：开发人员只要用dll/so库的形式完成业务功能的开发，URC框架软件会完成自动加载，大大降低代码量和开发难度；
