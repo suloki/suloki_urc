@@ -1,0 +1,4 @@
+boost:1.63
+protobuf:3.2.0
+websocketpp:0.8.1
+mysql connector/c:6.0.2

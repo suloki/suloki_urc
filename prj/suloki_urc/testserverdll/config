@@ -1,0 +1,11 @@
+{
+"logname":"testserver",
+"loglevel":"info",
+"urcip":"127.0.0.1",
+"urcport":"8101",
+"urcserveraddr":"127.0.0.1:8000",
+"urcthreadnum":"1",
+"groupname":"testgroup",
+"servername":"testserver0",
+"moduleinfo":[{"name":"main","path":"./testmainmodule.dll","config":"{\"testkey\":\"testval\"}"}]
+}

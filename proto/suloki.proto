@@ -1,0 +1,124 @@
+syntax = "proto2";
+
+package suloki;
+
+message SulokiMessage
+{
+	required string protocolVersion = 1;
+	required sint32 businessId = 2;
+	required sint32 messageId = 3;
+	enum MessageType{
+		request = 0;
+		response = 1;
+		push = 2;
+		notice = 3;
+	}
+	required MessageType messageType = 4;
+	required sint64 sequenceNumber = 5;
+	optional bytes  messageBody = 6;
+	optional string token = 7;
+	optional uint32 errorCode = 8;
+	optional string urcKey= 9;
+	optional bytes  urcVal= 10;
+	optional sint32 type = 11;
+	optional sint32 attrib = 12;
+	optional sint32 dir = 13;
+	repeated string routers = 14;
+	optional string dest = 15;
+	optional string dateTime = 16;
+	optional string option = 17;
+	repeated bytes  reserved = 18;
+}
+
+message SulokiTestMsgBody
+{
+	required string test= 1;
+}
+message SulokiInitMsgBody
+{
+	required string infomation= 1;
+}
+message SulokiStartMsgBody
+{
+	required string infomation= 1;
+}
+message SulokiStopMsgBody
+{
+	required string infomation= 1;
+}
+message SulokiClearMsgBody
+{
+	required string infomation= 1;
+}
+message SulokiContext
+{
+	optional string urName = 1;
+	optional sint64 id = 2;
+	optional bool b = 3;
+	optional string context = 4;
+	optional SulokiMessage msgOri= 5 ;
+	repeated bytes  reserved = 6;
+}
+message SulokiOperatorUrcMsgBody
+{
+}
+message SulokiServiceStateUrcMsgBody
+{
+	optional string ip= 1;
+	optional uint32 port= 2;
+	optional sint32 busyDegree= 3;
+	optional string urName= 4;
+}
+message SulokiGroupStateUrcMsgBody
+{
+	repeated SulokiServiceStateUrcMsgBody stateRes = 1;
+}
+message SulokiSqlReqUrcMsgBody
+{
+	required string urcKey= 1;
+	required string urcSql= 2;
+	optional string urcDbName= 3;
+}
+message SulokiSqlResItemUrcMsgBody
+{
+	repeated bytes  sqlResItem = 1;
+}
+message SulokiSqlResUrcMsgBody
+{
+	repeated SulokiSqlResItemUrcMsgBody  sqlRes = 1;
+}
+
+
+
+
+
+
+
+enum EventMode{
+	ONETIME = 0;
+	REPEATED = 1;
+}
+enum EventRight{
+	EXCLUSIVE = 0;
+	SHARED = 1;
+}
+enum EventPolicy{
+	BROADCAST = 0;
+	ROTATION = 1;
+	SEQUENCE = 2;
+}
+message SulokiRegRecvEventBody
+{
+	required string patternKey = 1;
+	required sint32 businessId = 2;
+	required sint32 messageId = 3;
+	optional sint64 sequenceNumber = 4;
+	required EventMode mode = 5;
+	optional sint32 timeout = 6;
+	required EventRight right = 7;
+	optional EventPolicy policy = 8;
+	required string callback = 9;
+	optional uint64 userdata = 10;
+}
+
+
