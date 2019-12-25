@@ -43,11 +43,13 @@ public:
 			Suloki::ConfigSingleton::Instance().SetConfig(Suloki::SULOKI_LOGLEVEL_KEY_CONFIG_BASE, logLevel);
 		}
 		catch (boost::property_tree::ptree_error pt){
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error";
+			//SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error";
+			std::cout << "read config error" << std::endl;
 			return Suloki::FAIL;
 		}
 		catch (Suloki::Exception e){
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error," << e.what();
+			//SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error," << e.what();
+			std::cout << "read config error," << e.what() << std::endl;
 			return Suloki::FAIL;
 		}
 		//
@@ -203,13 +205,13 @@ protected:
 				mysql_init(&mysql);
 				if (!mysql_real_connect(&mysql, "127.0.0.1", "root", "root", "sesystem", 3306, NULL, 0))
 				{
-					std::cout << "mysql_real_connect error" << std::endl;
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "mysql_real_connect error";
 					return -1;
 				}
 				if (mysql_query(&mysql, body.urcsql().c_str()) != 0)
 				{
 					mysql_close(&mysql);
-					std::cout << "mysql_query error" << std::endl;
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "mysql_query error";
 					return -1;
 				}
 				MYSQL_RES* pRes = NULL;
@@ -217,7 +219,7 @@ protected:
 				if (pRes == NULL)
 				{
 					mysql_close(&mysql);
-					std::cout << "mysql_store_result error" << std::endl;
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "mysql_store_result error";
 					return -1;
 				}
 				MYSQL_ROW row;
@@ -254,12 +256,12 @@ protected:
 			res.set_errorcode(Suloki::SUCCESS);
 			if (Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiSqlResUrcMsgBody>(res, resBody) != Suloki::SUCCESS)
 			{
-				std::cout << "SetBody error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "SetBody error";
 				return Suloki::FAIL;
 			}
 			if (!context.has_urname())
 			{
-				std::cout << "context has not urname field error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not urname field error";
 				return Suloki::FAIL;
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
@@ -305,7 +307,7 @@ protected:
 			//
 			if (!context.has_urname())
 			{
-				std::cout << "context has not urname field error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not urname field error";
 				return Suloki::FAIL;
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
@@ -350,7 +352,7 @@ protected:
 			//
 			if (!context.has_urname())
 			{
-				std::cout << "context has not urname field error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not urname field error";
 				return Suloki::FAIL;
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
@@ -395,7 +397,7 @@ protected:
 			//
 			if (!context.has_urname())
 			{
-				std::cout << "context has not urname field error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not urname field error";
 				return Suloki::FAIL;
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
@@ -442,7 +444,7 @@ protected:
 			//
 			if (!context.has_urname())
 			{
-				std::cout << "context has not urname field error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not urname field error";
 				return Suloki::FAIL;
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
@@ -482,7 +484,7 @@ protected:
 			Suloki::Ret ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetUrDirectory(urName, nameVector);
 			if (ret != Suloki::SUCCESS)
 			{
-				std::cout << "GetSulokiUrcModuleInterface error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetSulokiUrcModuleInterface error";
 				return Suloki::FAIL;
 			}
 			for (std::vector<std::string>::iterator iter = nameVector.begin(); iter != nameVector.end();iter++)
@@ -491,13 +493,13 @@ protected:
 				ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetNoSqlData(*iter, strVal);
 				if (ret != Suloki::SUCCESS)
 				{
-					std::cout << "GetNoSqlData error" << std::endl;
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetNoSqlData error";
 					return Suloki::FAIL;
 				}
 				suloki::SulokiServiceStateUrcMsgBody state;
 				if (!state.ParseFromString(strVal))
 				{
-					std::cout << "ParseFromString error" << std::endl;
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "ParseFromString error";
 					return Suloki::FAIL;
 				}
 				std::string urName = *iter;
@@ -506,7 +508,7 @@ protected:
 				suloki::SulokiServiceStateUrcMsgBody* pSulokiServiceStateUrcMsgBody = resBody.add_stateres();
 				if (pSulokiServiceStateUrcMsgBody == NULL)
 				{
-					std::cout << "no memory error" << std::endl;
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory error";
 					return Suloki::FAIL;
 				}
 				pSulokiServiceStateUrcMsgBody->set_ip(state.ip());
@@ -522,7 +524,7 @@ protected:
 			//
 			if (!context.has_urname())
 			{
-				std::cout << "context has not urname field error" << std::endl;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not urname field error";
 				return Suloki::FAIL;
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;

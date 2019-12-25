@@ -316,11 +316,13 @@ public:
 			Suloki::ConfigSingleton::Instance().SetConfig(Suloki::SULOKI_LOGLEVEL_KEY_CONFIG_BASE, logLevel);
 		}
 		catch (boost::property_tree::ptree_error pt){
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error";
+			//SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error";
+			std::cout << "read config error" << std::endl;
 			return Suloki::FAIL;
 		}
 		catch (Suloki::Exception e){
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error," << e.what();
+			//SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error," << e.what();
+			std::cout << "read config error," << e.what() << std::endl;
 			return Suloki::FAIL;
 		}
 		//
@@ -462,7 +464,7 @@ protected:
 	}
 	virtual Suloki::Ret HandleUnmatched(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
 	{
-		std::cout << "some msg have not handler, businessid:" << msg.businessid() << ";messageid:" << msg.messageid();
+		std::cout << "some msg have not handler, businessid:" << msg.businessid() << ";messageid:" << msg.messageid() << std::endl;
 		return Suloki::FAIL;
 	}
 protected:
@@ -483,7 +485,7 @@ protected:
 	//}
 	Suloki::Ret Handler_System_Start(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
 	{
-		std::cout << "recv system start msg" << std::endl;
+		//std::cout << "recv system start msg" << std::endl;
 		return Suloki::SUCCESS;
 	}
 	Suloki::Ret Handler_System_Test(suloki::SulokiMessage& msg, suloki::SulokiContext& context)

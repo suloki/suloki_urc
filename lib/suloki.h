@@ -4,7 +4,7 @@
 #define SULOKI_OPENSOURCE_VERSION_GLOBAL
 //#define SULOKI_FREE_VERSION_GLOBAL
 //#define SULOKI_WINDOWS_OS_SULOKI
-//目前必须是64位，32位可能有错误
+//must 64 bit,32bit maybe error
 //#define SULOKI_64_PLATFORM_SULOKI
 //test code
 //#define SULOKI_DEBUG_BASEFRAMEWORK
@@ -1303,6 +1303,10 @@ public:
 	Float GetBusydegree(void)
 	{
 		return m_threadPool.GetThreadpoolBusydegree();
+	}
+	bool GetRootFlag(void)
+	{
+		return m_bRoot;
 	}
 public://urc interface
 	//advanced interface

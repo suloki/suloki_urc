@@ -34,6 +34,7 @@ Log* GetLogPtr(void)
 }
 void SetLogLevel(std::string logLevel)
 {
+	//std::cout << logLevel << std::endl;
 	if(logLevel.compare("trace") == 0)
 	{
 		boost::log::core::get()->set_filter(boost::log::trivial::severity>=boost::log::trivial::trace);
@@ -160,10 +161,12 @@ Ret Config::ReadConfig(void)
 		//if(iter != item.end())
 		//	throw Exception("much address");
 	}catch(boost::property_tree::ptree_error pt){
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error";
+		//SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error";
+		std::cout << "read config error" << std::endl;
 		return FAIL;
 	}catch(Exception e){
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error," << e.what();
+		//SULOKI_ERROR_LOG_BASEFRAMEWORK << "read config error," << e.what();
+		std::cout << "read config error," << e.what() << std::endl;
 		return FAIL;
 	}
 	return SUCCESS;
@@ -184,7 +187,8 @@ Ret Config::GetConfig(std::string key, std::string& val)
 	std::map<std::string, std::string>::iterator iter = m_configMap.find(key);
 	if(iter == m_configMap.end())
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "config " << key << " not existed error";
+		//SULOKI_ERROR_LOG_BASEFRAMEWORK << "config " << key << " not existed error";
+		std::cout << "config " << key << " not existed error" << std::endl;
 		return FAIL;
 	}
 	val = iter->second;
@@ -1524,41 +1528,45 @@ Ret Maintancer::Clear(void)
 }
 void Maintancer::MyTimeout(void)
 {
-	std::string strGroup;
-	ConfigSingleton::Instance().GetConfig(SULOKI_GROUPNAME_KEY_CONFIG_BASE, strGroup);
-	std::string strServer;
-	ConfigSingleton::Instance().GetConfig(SULOKI_SERVERNAME_KEY_CONFIG_BASE, strServer);
-	std::string strUrName = SULOKI_REMOTED_RESOURCE_URC_BASE + SULOKI_SERVICES_PATHNAME_URC_BASE + strGroup + "/" + strServer;
-	std::string strIp;
-	ConfigSingleton::Instance().GetConfig(SULOKI_URCIP_KEY_CONFIG_BASE, strIp);
-	std::string strPort;
-	ConfigSingleton::Instance().GetConfig(SULOKI_URCPORT_KEY_CONFIG_BASE, strPort);
-	suloki::SulokiServiceStateUrcMsgBody state;
-	state.set_ip(strIp);
-	state.set_port(atoi(strPort.c_str()));
-	Float fBusy = UrcSingleton::Instance().GetBusydegree();
-	state.set_busydegree((Int)(255 * fBusy));
-	std::string strBody;
-	if (!state.SerializeToString(&strBody))
+	//????? urc server have not report state
+	if (!UrcSingleton::Instance().GetRootFlag())
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "SerializeToString error";
-	}
-	else
-	{
-		suloki::SulokiMessage req;
-		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
-		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
-		req.set_messageid(SULOKI_UPDATE_MESSAGEID_URC_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
-		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
-		req.set_urckey(strUrName);
-		req.set_urcval(strBody);
-		req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
-		req.set_attrib(0);
-		req.set_dir(true);
-		suloki::SulokiOperatorUrcMsgBody body;
-		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-		UrcSingleton::Instance().ReqresMsgToUrcserver(strUrName, req, 1000);
+		std::string strGroup;
+		ConfigSingleton::Instance().GetConfig(SULOKI_GROUPNAME_KEY_CONFIG_BASE, strGroup);
+		std::string strServer;
+		ConfigSingleton::Instance().GetConfig(SULOKI_SERVERNAME_KEY_CONFIG_BASE, strServer);
+		std::string strUrName = SULOKI_REMOTED_RESOURCE_URC_BASE + SULOKI_SERVICES_PATHNAME_URC_BASE + strGroup + "/" + strServer;
+		std::string strIp;
+		ConfigSingleton::Instance().GetConfig(SULOKI_URCIP_KEY_CONFIG_BASE, strIp);
+		std::string strPort;
+		ConfigSingleton::Instance().GetConfig(SULOKI_URCPORT_KEY_CONFIG_BASE, strPort);
+		suloki::SulokiServiceStateUrcMsgBody state;
+		state.set_ip(strIp);
+		state.set_port(atoi(strPort.c_str()));
+		Float fBusy = UrcSingleton::Instance().GetBusydegree();
+		state.set_busydegree((Int)(255 * fBusy));
+		std::string strBody;
+		if (!state.SerializeToString(&strBody))
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "SerializeToString error";
+		}
+		else
+		{
+			suloki::SulokiMessage req;
+			Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+			req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+			req.set_messageid(SULOKI_UPDATE_MESSAGEID_URC_PROTO);
+			req.set_messagetype(suloki::SulokiMessage::request);
+			req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+			req.set_urckey(strUrName);
+			req.set_urcval(strBody);
+			req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+			req.set_attrib(0);
+			req.set_dir(true);
+			suloki::SulokiOperatorUrcMsgBody body;
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+			UrcSingleton::Instance().ReqresMsgToUrcserver(strUrName, req, 1000);
+		}
 	}
 	m_timerSmart->expires_from_now(std::chrono::milliseconds(5000));
 	m_timerSmart->async_wait(std::bind(&Maintancer::MyTimeout, this));
@@ -1594,11 +1602,11 @@ Ret AppStateMachine::Init(void)
 	//if(ConfigSingleton::Instance().GetConfig(SULOKI_LOGLEVEL_KEY_CONFIG_BASE, strLoglevel) != SUCCESS)
 	//	strLoglevel = "info";
 	ConfigSingleton::Instance().GetConfig(SULOKI_LOGLEVEL_KEY_CONFIG_BASE, strLoglevel);
-	boost::log::add_file_log
-	(
+	auto skinSmartPtr = boost::log::add_file_log
+		(
 		boost::log::keywords::open_mode = std::ios::app,
 		boost::log::keywords::target = "log",
-		boost::log::keywords::file_name = strLogname,//"log_%N.log",                                        //< file name pattern >//
+		boost::log::keywords::file_name = (std::string)"./log/" + strLogname,//"log_%N.log",                                        //< file name pattern >//
 		boost::log::keywords::rotation_size = 1024 * 1024 * 10,                                   //< rotate files every 10 MiB... >//
 		boost::log::keywords::max_size = 1024 * 1024 * 1000,
 		boost::log::keywords::time_based_rotation = boost::log::sinks::file::rotation_at_time_point(0, 0, 0), //< ...or at midnight >//
@@ -1609,21 +1617,24 @@ Ret AppStateMachine::Init(void)
 		//(
 		//	expr::stream
 		//	<< expr::format_date_time< boost::posix_time::ptime >("TimeStamp", "%Y-%m-%d, %H:%M:%S.%f")
-            		//<< " [" << expr::format_date_time< attrs::timer::value_type >("Uptime", "%O:%M:%S")
-            		//<< "] [" << expr::format_named_scope("Scope", keywords::format = "%n (%f:%l)")
-            		//<< "] <" << expr::attr< severity_level >("Severity")
-            	//	<< "> " << expr::message
+		//<< " [" << expr::format_date_time< attrs::timer::value_type >("Uptime", "%O:%M:%S")
+		//<< "] [" << expr::format_named_scope("Scope", keywords::format = "%n (%f:%l)")
+		//<< "] <" << expr::attr< severity_level >("Severity")
+		//	<< "> " << expr::message
 		//)
 		boost::log::keywords::format = boost::log::expressions::stream
-			<< "{" << boost::log::expressions::format_date_time< boost::posix_time::ptime >("TimeStamp", "%Y-%m-%d, %H:%M:%S.%f")
-			//<< "][" << expr::format_date_time< attrs::timer::value_type >("Uptime", "%O:%M:%S")
-			//<< "][" << expr::format_named_scope("Scope", keywords::format = "%n (%f:%l)")
-			<< "}[" << boost::log::expressions::attr< boost::log::trivial::severity_level >("Severity")
-			<< "]" << boost::log::expressions::message
-	);
+		<< "{" << boost::log::expressions::format_date_time< boost::posix_time::ptime >("TimeStamp", "%Y-%m-%d, %H:%M:%S.%f")
+		//<< "][" << expr::format_date_time< attrs::timer::value_type >("Uptime", "%O:%M:%S")
+		//<< "][" << expr::format_named_scope("Scope", keywords::format = "%n (%f:%l)")
+		<< "}[" << boost::log::expressions::attr< boost::log::trivial::severity_level >("Severity")
+		<< "]" << boost::log::expressions::message
+		);
+	skinSmartPtr->locked_backend()->auto_flush(true);
+	boost::log::core::get()->add_sink(skinSmartPtr);
 	//boost::log::core::get()->set_filter(boost::log::trivial::severity>=boost::log::trivial::info);
 	SetLogLevel(strLoglevel);
 	boost::log::add_common_attributes();
+	//std::cout << "log init" << std::endl;
 	//
 	try{
 		ConfigSingleton::Instance();

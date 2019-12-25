@@ -1,0 +1,10 @@
+{
+"logname":"urcserver",
+"loglevel":"info",
+"urcport":"8000",
+"urcserveraddr":"_1._1._1._1:8000",
+"urcthreadnum":"1",
+"groupname":"urcgroup",
+"servername":"urcserver0",
+"moduleinfo":[{"name":"main","path":"./urchandler.dll","config":"{\"testkey\":\"testval\"}"}]
+}

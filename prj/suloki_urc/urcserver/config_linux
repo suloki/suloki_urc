@@ -4,7 +4,7 @@
 "urcip":"127.0.0.1",
 "urcport":"8000",
 "urcserveraddr":"_1._1._1._1:8000",
-"urcthreadnum":"1",
+"urcthreadnum":"3",
 "groupname":"urcgroup",
 "servername":"urcserver0",
 "moduleinfo":[{"name":"main","path":"./liburchandler.so","config":"{\"mysqlinfo\":{\"ip\":\"127.0.0.1\",\"port\":\"3306\",\"user\":\"root\",\"pass\":\"root\",\"dbname\":\"sesystem\"}}"}]

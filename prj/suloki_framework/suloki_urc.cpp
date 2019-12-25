@@ -17,7 +17,8 @@ public:
 	{
 		if (Suloki::ConfigSingleton::Instance().ReadConfig() != Suloki::SUCCESS)
 		{
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "ConfigSingleton::Instance().ReadConfig error";
+			//SULOKI_ERROR_LOG_BASEFRAMEWORK << "ConfigSingleton::Instance().ReadConfig error";
+			std::cout << "ConfigSingleton::Instance().ReadConfig error" << std::endl;
 			return Suloki::FAIL;
 		}
 		std::string strLogname;
@@ -29,11 +30,14 @@ public:
 		//if(ConfigSingleton::Instance().GetConfig(SULOKI_LOGLEVEL_KEY_CONFIG_BASE, strLoglevel) != SUCCESS)
 		//	strLoglevel = "info";
 		Suloki::ConfigSingleton::Instance().GetConfig(Suloki::SULOKI_LOGLEVEL_KEY_CONFIG_BASE, strLoglevel);
-		boost::log::add_file_log
+		//
+		//std::cout << "read config ok, lognale:" << strLogname << ";loglevel:" << strLoglevel << std::endl;
+		//
+		auto skinSmartPtr = boost::log::add_file_log
 			(
 			boost::log::keywords::open_mode = std::ios::app,
 			boost::log::keywords::target = "log",
-			boost::log::keywords::file_name = strLogname,//"log_%N.log",                                        //< file name pattern >//
+			boost::log::keywords::file_name = (std::string)"./log/" + strLogname,//"log_%N.log",                                        //< file name pattern >//
 			boost::log::keywords::rotation_size = 1024 * 1024 * 10,                                   //< rotate files every 10 MiB... >//
 			boost::log::keywords::max_size = 1024 * 1024 * 1000,
 			boost::log::keywords::time_based_rotation = boost::log::sinks::file::rotation_at_time_point(0, 0, 0), //< ...or at midnight >//
@@ -56,9 +60,12 @@ public:
 			<< "}[" << boost::log::expressions::attr< boost::log::trivial::severity_level >("Severity")
 			<< "]" << boost::log::expressions::message
 			);
+		skinSmartPtr->locked_backend()->auto_flush(true);
+		boost::log::core::get()->add_sink(skinSmartPtr);
 		//boost::log::core::get()->set_filter(boost::log::trivial::severity>=boost::log::trivial::info);
 		Suloki::SetLogLevel(strLoglevel);
 		boost::log::add_common_attributes();
+		//std::cout << "log init ok" << std::endl;
 		//
 		try{
 			Suloki::ConfigSingleton::Instance();
