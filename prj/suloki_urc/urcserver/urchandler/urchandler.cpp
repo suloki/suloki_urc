@@ -5,35 +5,20 @@
 #include "urchandler.h"
 #include "mysql.h"
 
-class MySulokiUrcModuleInterface
+class MyModuleStateMachine : public Suloki::AppStateMachine
 {
 public:
-	static void SetSulokiUrcModuleInterface(SulokiUrcModuleInterface* pSulokiUrcModuleInterface)
-	{
-		m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
-	}
-	static inline SulokiUrcModuleInterface* GetSulokiUrcModuleInterface(void)
-	{
-		return m_pSulokiUrcModuleInterface;
-	}
-private:
-	MySulokiUrcModuleInterface(MySulokiUrcModuleInterface& ref) {}
-	MySulokiUrcModuleInterface& operator=(MySulokiUrcModuleInterface& ref) { return *this; }
-protected:
-	static SulokiUrcModuleInterface* m_pSulokiUrcModuleInterface;
-};
-SulokiUrcModuleInterface* MySulokiUrcModuleInterface::m_pSulokiUrcModuleInterface = NULL;
-
-
-class MyAppStateMachine : public Suloki::AppStateMachine
-{
-public:
-	MyAppStateMachine()
+	MyModuleStateMachine()
 	{}
-	virtual ~MyAppStateMachine()
-	{}
+	virtual ~MyModuleStateMachine()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	virtual Suloki::Ret Init(void)
 	{
+#ifdef SULOKI_WINDOWS_OS_SULOKI
 		Suloki::ConfigSingleton::Instance().SetConfig(Suloki::SULOKI_LOGNAME_KEY_CONFIG_BASE, "urchandler");
 		//Suloki::ConfigSingleton::Instance().SetConfig(Suloki::SULOKI_LOGLEVEL_KEY_CONFIG_BASE, Suloki::LOG_INFO_LEVEL);
 		try{
@@ -58,7 +43,7 @@ public:
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "AppStateMachine::Init error";
 			return 1;
 		}
-		//
+#endif
 		;
 		Suloki::Global::SetState(Suloki::INIT_GLOBALSTATE_BASEFRAMEWORK);
 		//
@@ -103,13 +88,13 @@ public:
 		return AppStateMachine::Clear();
 	}
 private:
-	MyAppStateMachine(MyAppStateMachine& ref) {}
-	MyAppStateMachine& operator=(MyAppStateMachine& ref) { return *this; }
+	MyModuleStateMachine(MyModuleStateMachine& ref) {}
+	MyModuleStateMachine& operator=(MyModuleStateMachine& ref) { return *this; }
 private:
 };
-typedef Suloki::Singleton<MyAppStateMachine> MyAppStateMachineSingleton;
+typedef Suloki::Singleton<MyModuleStateMachine> MyModuleStateMachineSingleton;
 
-class MyDispatcher : public Suloki::Dispatcher<suloki::SulokiMessage, suloki::SulokiContext>
+class MyDispatcher : public Suloki::Dispatcher<SulokiMessage, SulokiContext>
 {
 public:
 	MyDispatcher()
@@ -155,46 +140,54 @@ public:
 		}
 	}
 	virtual ~MyDispatcher()
-	{}
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	//void SetSulokiUrcModuleInterface(SulokiUrcModuleInterface* pSulokiUrcModuleInterface)
 	//{
 	//	m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
 	//}
 protected:
-	virtual std::string CalKey(suloki::SulokiMessage& msg)
+	virtual std::string CalKey(SulokiMessage& msg)
 	{
 		std::stringstream sStream;
 		sStream << msg.businessid() << "_" << msg.messageid();
 		return sStream.str();// protocolReq.m_msgKey;
 	}
-	virtual Suloki::Ret HandleUnmatched(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	virtual Suloki::Ret HandleUnmatched(SulokiMessage& msg, SulokiContext& context)
 	{
 		return Suloki::FAIL;
 	}
 protected:
-	//Suloki::Ret Handler_SYSTEM_TEST1(suloki::SulokiMessage& protocolReq, suloki::SulokiContext& paraIn, suloki::SulokiMessage& protocolRes, suloki::SulokiContext& paraOut)
+	//Suloki::Ret Handler_SYSTEM_TEST1(SulokiMessage& protocolReq, SulokiContext& paraIn, SulokiMessage& protocolRes, SulokiContext& paraOut)
 	//{
 	//	std::cout << "Handler_SYSTEM_TEST1" << std::endl;
 	//	return Suloki::SUCCESS;
 	//}
-	Suloki::Ret Handler_System_Start(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_System_Start(SulokiMessage& msg, SulokiContext& context)
 	{
 		//std::cout << "recv system start msg" << std::endl;
 		return Suloki::SUCCESS;
 	}
-	Suloki::Ret Handler_Urc_Sql(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_Urc_Sql(SulokiMessage& msg, SulokiContext& context)
 	{
 		if (!context.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiSqlReqUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiSqlReqUrcMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiSqlReqUrcMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiSqlReqUrcMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			suloki::SulokiSqlResUrcMsgBody resBody;
 			//?????
@@ -206,13 +199,13 @@ protected:
 				if (!mysql_real_connect(&mysql, "127.0.0.1", "root", "root", "sesystem", 3306, NULL, 0))
 				{
 					SULOKI_ERROR_LOG_BASEFRAMEWORK << "mysql_real_connect error";
-					return -1;
+					return Suloki::FAIL;
 				}
 				if (mysql_query(&mysql, body.urcsql().c_str()) != 0)
 				{
 					mysql_close(&mysql);
 					SULOKI_ERROR_LOG_BASEFRAMEWORK << "mysql_query error";
-					return -1;
+					return Suloki::FAIL;
 				}
 				MYSQL_RES* pRes = NULL;
 				pRes = mysql_store_result(&mysql);
@@ -220,7 +213,7 @@ protected:
 				{
 					mysql_close(&mysql);
 					SULOKI_ERROR_LOG_BASEFRAMEWORK << "mysql_store_result error";
-					return -1;
+					return Suloki::FAIL;
 				}
 				MYSQL_ROW row;
 				while ((row = mysql_fetch_row(pRes)) != NULL)
@@ -236,11 +229,11 @@ protected:
 				mysql_close(&mysql);
 			}
 			//
-			//suloki::SulokiMessage res;
+			//SulokiMessage res;
 			//SulokiProtoSwrap::MakeBaseMessage(res);
 			//res.set_businessid(msg.businessid());
 			//res.set_messageid(msg.messageid());
-			//res.set_messagetype(suloki::SulokiMessage::response);
+			//res.set_messagetype(SulokiMessage::response);
 			//res.set_sequencenumber(msg.sequencenumber());
 			//res.set_errorcode(Suloki::SUCCESS);
 			//for (Suloki::Int i = 0; i < msg.routers_size(); i++)
@@ -275,21 +268,27 @@ protected:
 		}
 		return Suloki::FAIL;
 	}
-	Suloki::Ret Handler_Urc_Add(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_Urc_Add(SulokiMessage& msg, SulokiContext& context)
 	{
 		if (!context.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiOperatorUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			suloki::SulokiOperatorUrcMsgBody resBody;
+			;
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!msg.has_urckey())
 				return Suloki::FAIL;
@@ -303,7 +302,7 @@ protected:
 			Suloki::Ret ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->AddNoSqlData(urName, strVal, msg.dir());
 			res.set_errorcode(ret);
 			//
-			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+			//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!context.has_urname())
 			{
@@ -321,21 +320,27 @@ protected:
 		}
 		return Suloki::FAIL;
 	}
-	Suloki::Ret Handler_Urc_Del(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_Urc_Del(SulokiMessage& msg, SulokiContext& context)
 	{
 		if (!context.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiOperatorUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			suloki::SulokiOperatorUrcMsgBody resBody;
+			;
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!msg.has_urckey())
 				return Suloki::FAIL;
@@ -348,7 +353,7 @@ protected:
 			res.set_errorcode(ret);
 			res.set_urcval(strVal);
 			//
-			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+			//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!context.has_urname())
 			{
@@ -366,24 +371,33 @@ protected:
 		}
 		return Suloki::FAIL;
 	}
-	Suloki::Ret Handler_Urc_Update(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_Urc_Update(SulokiMessage& msg, SulokiContext& context)
 	{
 		if (!context.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiOperatorUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			suloki::SulokiOperatorUrcMsgBody resBody;
+			;
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!msg.has_urckey())
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "urckey field have not existed";
 				return Suloki::FAIL;
+			}
 			std::string urName = msg.urckey();
 			urName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
 			urName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
@@ -393,7 +407,7 @@ protected:
 			res.set_errorcode(ret);
 			res.set_urcval(strVal);
 			//
-			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+			//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!context.has_urname())
 			{
@@ -402,34 +416,49 @@ protected:
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
 			if (!(MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetObject(context.urname(), baseSmartPtr) == Suloki::SUCCESS && baseSmartPtr.get() != NULL))
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetObject error, ur name:" << context.urname();
 				return Suloki::FAIL;
+			}
 			boost::shared_ptr<Suloki::UrcTcpConnection> connSmartPtr = boost::dynamic_pointer_cast<Suloki::UrcTcpConnection>(baseSmartPtr);
 			if (connSmartPtr.get() == NULL)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "dynamic_pointer_cast to Suloki::UrcTcpConnection error";
 				return Suloki::FAIL;
+			}
 			connSmartPtr->WriteAsync(res);// strResMsg.c_str(), strResMsg.length());
 			//std::cout << "update ur name:" << urName << std::endl;
 			return Suloki::SUCCESS;
 		}
 		return Suloki::FAIL;
 	}
-	Suloki::Ret Handler_Urc_Get(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_Urc_Get(SulokiMessage& msg, SulokiContext& context)
 	{
 		if (!context.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiOperatorUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			suloki::SulokiOperatorUrcMsgBody resBody;
+			;
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!msg.has_urckey())
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "urckey field have not existed";
 				return Suloki::FAIL;
+			}
 			std::string urName = msg.urckey();
 			urName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
 			urName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
@@ -440,7 +469,7 @@ protected:
 			res.set_urcval(strVal);
 			//std::cout << "get nosql val:" << strVal << std::endl;
 			//
-			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+			//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
 			//
 			if (!context.has_urname())
 			{
@@ -449,33 +478,46 @@ protected:
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
 			if (!(MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetObject(context.urname(), baseSmartPtr) == Suloki::SUCCESS && baseSmartPtr.get() != NULL))
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetObject error, ur name:" << context.urname();
 				return Suloki::FAIL;
+			}
 			boost::shared_ptr<Suloki::UrcTcpConnection> connSmartPtr = boost::dynamic_pointer_cast<Suloki::UrcTcpConnection>(baseSmartPtr);
 			if (connSmartPtr.get() == NULL)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "dynamic_pointer_cast to Suloki::UrcTcpConnection error";
 				return Suloki::FAIL;
+			}
 			connSmartPtr->WriteAsync(res);// strResMsg.c_str(), strResMsg.length());
 			return Suloki::SUCCESS;
 		}
 		return Suloki::FAIL;
 	}
-	Suloki::Ret Handler_Urc_ObtainStates(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_Urc_ObtainStates(SulokiMessage& msg, SulokiContext& context)
 	{
 		if (!context.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiOperatorUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			suloki::SulokiGroupStateUrcMsgBody resBody;
 			//
 			if (!msg.has_urckey())
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "urckey field have not existed";
 				return Suloki::FAIL;
+			}
 			std::string urName = msg.urckey();
 			urName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
 			urName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
@@ -529,10 +571,16 @@ protected:
 			}
 			boost::shared_ptr<BaseRoot> baseSmartPtr;
 			if (!(MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetObject(context.urname(), baseSmartPtr) == Suloki::SUCCESS && baseSmartPtr.get() != NULL))
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetObject error, ur name:" << context.urname();
 				return Suloki::FAIL;
+			}
 			boost::shared_ptr<Suloki::UrcTcpConnection> connSmartPtr = boost::dynamic_pointer_cast<Suloki::UrcTcpConnection>(baseSmartPtr);
 			if (connSmartPtr.get() == NULL)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "dynamic_pointer_cast to Suloki::UrcTcpConnection error";
 				return Suloki::FAIL;
+			}
 			connSmartPtr->WriteAsync(res);// strResMsg.c_str(), strResMsg.length());
 			return Suloki::SUCCESS;
 		}
@@ -546,18 +594,23 @@ class MySulokiHandleModule : public SulokiHandleModuleInterface
 public:
 	//explicit MySulokiHandleModule(std::string moduleName){}
 	MySulokiHandleModule(){}
-	virtual ~MySulokiHandleModule(){}
+	virtual ~MySulokiHandleModule()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	//
 	virtual SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig)
 	{
-		MySulokiUrcModuleInterface::SetSulokiUrcModuleInterface(pSulokiUrcModuleInterface);
+		//MySulokiUrcModuleInterface::SetSulokiUrcModuleInterface(pSulokiUrcModuleInterface);
 		//m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
 		//m_dispatcher.SetSulokiUrcModuleInterface(m_pSulokiUrcModuleInterface);
 		return Suloki::SUCCESS;
 	}
 	virtual SulokiRet Start(void){ return Suloki::SUCCESS; }
-	virtual SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg){ return Suloki::SUCCESS; }
-	virtual SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context)
+	virtual SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg){ return Suloki::SUCCESS; }
+	virtual SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context)
 	{
 		return m_dispatcher.Handle(*msgSmart, context);
 	}
@@ -579,39 +632,44 @@ typedef Suloki::Singleton<MySulokiHandleModule> MySulokiHandleModuleSingleton;
 
 URCHANDLER_API SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig)
 {
-	if (MyAppStateMachineSingleton::Instance().Init() != 0)
+	MySulokiUrcModuleInterface::SetSulokiUrcModuleInterface(pSulokiUrcModuleInterface);
+	if (MyModuleStateMachineSingleton::Instance().Init() != 0)
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyAppStateMachineSingleton::Instance().Init() error";
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyModuleStateMachineSingleton::Instance().Init() error";
 		return -1;
 	}
 	return MySulokiHandleModuleSingleton::Instance().Init(pSulokiUrcModuleInterface, groupName, serviceName, strModuleName, strConfig);
 }
 URCHANDLER_API SulokiRet Start(void)
 {
-	if (MyAppStateMachineSingleton::Instance().Start() != 0)
+	if (MyModuleStateMachineSingleton::Instance().Start() != 0)
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyAppStateMachineSingleton::Instance().Start() error";
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyModuleStateMachineSingleton::Instance().Start() error";
 		return -1;
 	}
 	return MySulokiHandleModuleSingleton::Instance().Start();
 }
-URCHANDLER_API SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg)
+URCHANDLER_API SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg)
 {
 	return MySulokiHandleModuleSingleton::Instance().TestValid(msg);
 }
-URCHANDLER_API SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context)
+URCHANDLER_API SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context)
 {
 	return MySulokiHandleModuleSingleton::Instance().Handle(msgSmart, context);
 }
 URCHANDLER_API SulokiRet Stop(void)
 {
-	MyAppStateMachineSingleton::Instance().Stop();
-	return MySulokiHandleModuleSingleton::Instance().Stop();
+	MySulokiHandleModuleSingleton::Instance().Stop();
+	MyModuleStateMachineSingleton::Instance().Stop();
+	return Suloki::SUCCESS;
 }
 URCHANDLER_API SulokiRet Clear(void)
 {
-	MyAppStateMachineSingleton::Instance().Clear();
-	return MySulokiHandleModuleSingleton::Instance().Clear();
+	MySulokiHandleModuleSingleton::Instance().Clear();
+	MySulokiHandleModuleSingleton::Deinstance();
+	MyModuleStateMachineSingleton::Instance().Clear();
+	MyModuleStateMachineSingleton::Deinstance();
+	return Suloki::SUCCESS;
 }
 
 /*

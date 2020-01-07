@@ -56,7 +56,7 @@ message SulokiContext
 	optional sint64 id = 2;
 	optional bool b = 3;
 	optional string context = 4;
-	optional SulokiMessage msgOri= 5 ;
+	optional string msgOri= 5 ;
 	repeated bytes  reserved = 6;
 }
 message SulokiOperatorUrcMsgBody

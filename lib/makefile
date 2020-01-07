@@ -12,7 +12,8 @@ LIBS    :=
 LDFLAGS:= 
 DEFINES:= -DSULOKI_64_PLATFORM_SULOKI  -DBOOST_LOG_DYN_LINK
 INCLUDE:= -I. -I../depend/boost/ -I../depend/protobuf/src/ -I../proto/ -I../depend/loki/ -I../depend/websocketpp/
-CFLAGS  := -g -fPIC -Wall -O3 $(DEFINES) $(INCLUDE)
+#CFLAGS  := -g -fPIC -Wall -O3 $(DEFINES) $(INCLUDE)
+CFLAGS  := -fPIC -Wall -O3 $(DEFINES) $(INCLUDE)
 CXXFLAGS:= $(CFLAGS) -DHAVE_CONFIG_H
 #i think you should do anything here
 #source file

@@ -320,8 +320,6 @@ void TableStruct::InitDefaultsImpl() {
   _SulokiSqlResItemUrcMsgBody_default_instance_.DefaultConstruct();
   _SulokiSqlResUrcMsgBody_default_instance_.DefaultConstruct();
   _SulokiRegRecvEventBody_default_instance_.DefaultConstruct();
-  _SulokiContext_default_instance_.get_mutable()->msgori_ = const_cast< ::suloki::SulokiMessage*>(
-      ::suloki::SulokiMessage::internal_default_instance());
 }
 
 void InitDefaults() {
@@ -347,34 +345,33 @@ void AddDescriptorsImpl() {
       "\ninfomation\030\001 \002(\t\"(\n\022SulokiStartMsgBody\022"
       "\022\n\ninfomation\030\001 \002(\t\"\'\n\021SulokiStopMsgBody"
       "\022\022\n\ninfomation\030\001 \002(\t\"(\n\022SulokiClearMsgBo"
-      "dy\022\022\n\ninfomation\030\001 \002(\t\"\200\001\n\rSulokiContext"
-      "\022\016\n\006urName\030\001 \001(\t\022\n\n\002id\030\002 \001(\022\022\t\n\001b\030\003 \001(\010\022"
-      "\017\n\007context\030\004 \001(\t\022%\n\006msgOri\030\005 \001(\0132\025.sulok"
-      "i.SulokiMessage\022\020\n\010reserved\030\006 \003(\014\"\032\n\030Sul"
-      "okiOperatorUrcMsgBody\"\\\n\034SulokiServiceSt"
-      "ateUrcMsgBody\022\n\n\002ip\030\001 \001(\t\022\014\n\004port\030\002 \001(\r\022"
-      "\022\n\nbusyDegree\030\003 \001(\021\022\016\n\006urName\030\004 \001(\t\"T\n\032S"
-      "ulokiGroupStateUrcMsgBody\0226\n\010stateRes\030\001 "
-      "\003(\0132$.suloki.SulokiServiceStateUrcMsgBod"
-      "y\"K\n\026SulokiSqlReqUrcMsgBody\022\016\n\006urcKey\030\001 "
-      "\002(\t\022\016\n\006urcSql\030\002 \002(\t\022\021\n\turcDbName\030\003 \001(\t\"0"
-      "\n\032SulokiSqlResItemUrcMsgBody\022\022\n\nsqlResIt"
-      "em\030\001 \003(\014\"L\n\026SulokiSqlResUrcMsgBody\0222\n\006sq"
-      "lRes\030\001 \003(\0132\".suloki.SulokiSqlResItemUrcM"
-      "sgBody\"\211\002\n\026SulokiRegRecvEventBody\022\022\n\npat"
-      "ternKey\030\001 \002(\t\022\022\n\nbusinessId\030\002 \002(\021\022\021\n\tmes"
-      "sageId\030\003 \002(\021\022\026\n\016sequenceNumber\030\004 \001(\022\022\037\n\004"
-      "mode\030\005 \002(\0162\021.suloki.EventMode\022\017\n\007timeout"
-      "\030\006 \001(\021\022!\n\005right\030\007 \002(\0162\022.suloki.EventRigh"
-      "t\022#\n\006policy\030\010 \001(\0162\023.suloki.EventPolicy\022\020"
-      "\n\010callback\030\t \002(\t\022\020\n\010userdata\030\n \001(\004*&\n\tEv"
-      "entMode\022\013\n\007ONETIME\020\000\022\014\n\010REPEATED\020\001*\'\n\nEv"
-      "entRight\022\r\n\tEXCLUSIVE\020\000\022\n\n\006SHARED\020\001*8\n\013E"
-      "ventPolicy\022\r\n\tBROADCAST\020\000\022\014\n\010ROTATION\020\001\022"
-      "\014\n\010SEQUENCE\020\002"
+      "dy\022\022\n\ninfomation\030\001 \002(\t\"i\n\rSulokiContext\022"
+      "\016\n\006urName\030\001 \001(\t\022\n\n\002id\030\002 \001(\022\022\t\n\001b\030\003 \001(\010\022\017"
+      "\n\007context\030\004 \001(\t\022\016\n\006msgOri\030\005 \001(\t\022\020\n\010reser"
+      "ved\030\006 \003(\014\"\032\n\030SulokiOperatorUrcMsgBody\"\\\n"
+      "\034SulokiServiceStateUrcMsgBody\022\n\n\002ip\030\001 \001("
+      "\t\022\014\n\004port\030\002 \001(\r\022\022\n\nbusyDegree\030\003 \001(\021\022\016\n\006u"
+      "rName\030\004 \001(\t\"T\n\032SulokiGroupStateUrcMsgBod"
+      "y\0226\n\010stateRes\030\001 \003(\0132$.suloki.SulokiServi"
+      "ceStateUrcMsgBody\"K\n\026SulokiSqlReqUrcMsgB"
+      "ody\022\016\n\006urcKey\030\001 \002(\t\022\016\n\006urcSql\030\002 \002(\t\022\021\n\tu"
+      "rcDbName\030\003 \001(\t\"0\n\032SulokiSqlResItemUrcMsg"
+      "Body\022\022\n\nsqlResItem\030\001 \003(\014\"L\n\026SulokiSqlRes"
+      "UrcMsgBody\0222\n\006sqlRes\030\001 \003(\0132\".suloki.Sulo"
+      "kiSqlResItemUrcMsgBody\"\211\002\n\026SulokiRegRecv"
+      "EventBody\022\022\n\npatternKey\030\001 \002(\t\022\022\n\nbusines"
+      "sId\030\002 \002(\021\022\021\n\tmessageId\030\003 \002(\021\022\026\n\016sequence"
+      "Number\030\004 \001(\022\022\037\n\004mode\030\005 \002(\0162\021.suloki.Even"
+      "tMode\022\017\n\007timeout\030\006 \001(\021\022!\n\005right\030\007 \002(\0162\022."
+      "suloki.EventRight\022#\n\006policy\030\010 \001(\0162\023.sulo"
+      "ki.EventPolicy\022\020\n\010callback\030\t \002(\t\022\020\n\010user"
+      "data\030\n \001(\004*&\n\tEventMode\022\013\n\007ONETIME\020\000\022\014\n\010"
+      "REPEATED\020\001*\'\n\nEventRight\022\r\n\tEXCLUSIVE\020\000\022"
+      "\n\n\006SHARED\020\001*8\n\013EventPolicy\022\r\n\tBROADCAST\020"
+      "\000\022\014\n\010ROTATION\020\001\022\014\n\010SEQUENCE\020\002"
   };
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
-      descriptor, 1613);
+      descriptor, 1589);
   ::google::protobuf::MessageFactory::InternalRegisterGeneratedFile(
     "suloki.proto", &protobuf_RegisterTypes);
   ::google::protobuf::internal::OnShutdown(&TableStruct::Shutdown);
@@ -3972,10 +3969,9 @@ SulokiContext::SulokiContext(const SulokiContext& from)
   if (from.has_context()) {
     context_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.context_);
   }
+  msgori_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   if (from.has_msgori()) {
-    msgori_ = new ::suloki::SulokiMessage(*from.msgori_);
-  } else {
-    msgori_ = NULL;
+    msgori_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.msgori_);
   }
   ::memcpy(&id_, &from.id_,
     reinterpret_cast<char*>(&b_) -
@@ -3987,8 +3983,9 @@ void SulokiContext::SharedCtor() {
   _cached_size_ = 0;
   urname_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   context_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  ::memset(&msgori_, 0, reinterpret_cast<char*>(&b_) -
-    reinterpret_cast<char*>(&msgori_) + sizeof(b_));
+  msgori_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  ::memset(&id_, 0, reinterpret_cast<char*>(&b_) -
+    reinterpret_cast<char*>(&id_) + sizeof(b_));
 }
 
 SulokiContext::~SulokiContext() {
@@ -3999,9 +3996,7 @@ SulokiContext::~SulokiContext() {
 void SulokiContext::SharedDtor() {
   urname_.DestroyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   context_.DestroyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  if (this != internal_default_instance()) {
-    delete msgori_;
-  }
+  msgori_.DestroyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
 
 void SulokiContext::SetCachedSize(int size) const {
@@ -4040,8 +4035,8 @@ void SulokiContext::Clear() {
       (*context_.UnsafeRawStringPointer())->clear();
     }
     if (has_msgori()) {
-      GOOGLE_DCHECK(msgori_ != NULL);
-      msgori_->::suloki::SulokiMessage::Clear();
+      GOOGLE_DCHECK(!msgori_.IsDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited()));
+      (*msgori_.UnsafeRawStringPointer())->clear();
     }
   }
   if (_has_bits_[0 / 32] & 24u) {
@@ -4122,12 +4117,16 @@ bool SulokiContext::MergePartialFromCodedStream(
         break;
       }
 
-      // optional .suloki.SulokiMessage msgOri = 5;
+      // optional string msgOri = 5;
       case 5: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(42u)) {
-          DO_(::google::protobuf::internal::WireFormatLite::ReadMessageNoVirtual(
-               input, mutable_msgori()));
+          DO_(::google::protobuf::internal::WireFormatLite::ReadString(
+                input, this->mutable_msgori()));
+          ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
+            this->msgori().data(), this->msgori().length(),
+            ::google::protobuf::internal::WireFormat::PARSE,
+            "suloki.SulokiContext.msgOri");
         } else {
           goto handle_unusual;
         }
@@ -4201,10 +4200,14 @@ void SulokiContext::SerializeWithCachedSizes(
       4, this->context(), output);
   }
 
-  // optional .suloki.SulokiMessage msgOri = 5;
+  // optional string msgOri = 5;
   if (has_msgori()) {
-    ::google::protobuf::internal::WireFormatLite::WriteMessageMaybeToArray(
-      5, *this->msgori_, output);
+    ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
+      this->msgori().data(), this->msgori().length(),
+      ::google::protobuf::internal::WireFormat::SERIALIZE,
+      "suloki.SulokiContext.msgOri");
+    ::google::protobuf::internal::WireFormatLite::WriteStringMaybeAliased(
+      5, this->msgori(), output);
   }
 
   // repeated bytes reserved = 6;
@@ -4256,11 +4259,15 @@ void SulokiContext::SerializeWithCachedSizes(
         4, this->context(), target);
   }
 
-  // optional .suloki.SulokiMessage msgOri = 5;
+  // optional string msgOri = 5;
   if (has_msgori()) {
-    target = ::google::protobuf::internal::WireFormatLite::
-      InternalWriteMessageNoVirtualToArray(
-        5, *this->msgori_, false, target);
+    ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
+      this->msgori().data(), this->msgori().length(),
+      ::google::protobuf::internal::WireFormat::SERIALIZE,
+      "suloki.SulokiContext.msgOri");
+    target =
+      ::google::protobuf::internal::WireFormatLite::WriteStringToArray(
+        5, this->msgori(), target);
   }
 
   // repeated bytes reserved = 6;
@@ -4309,11 +4316,11 @@ size_t SulokiContext::ByteSizeLong() const {
           this->context());
     }
 
-    // optional .suloki.SulokiMessage msgOri = 5;
+    // optional string msgOri = 5;
     if (has_msgori()) {
       total_size += 1 +
-        ::google::protobuf::internal::WireFormatLite::MessageSizeNoVirtual(
-          *this->msgori_);
+        ::google::protobuf::internal::WireFormatLite::StringSize(
+          this->msgori());
     }
 
     // optional sint64 id = 2;
@@ -4366,7 +4373,8 @@ void SulokiContext::MergeFrom(const SulokiContext& from) {
       context_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.context_);
     }
     if (from.has_msgori()) {
-      mutable_msgori()->::suloki::SulokiMessage::MergeFrom(from.msgori());
+      set_has_msgori();
+      msgori_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.msgori_);
     }
     if (from.has_id()) {
       set_id(from.id());
@@ -4392,9 +4400,6 @@ void SulokiContext::CopyFrom(const SulokiContext& from) {
 }
 
 bool SulokiContext::IsInitialized() const {
-  if (has_msgori()) {
-    if (!this->msgori_->IsInitialized()) return false;
-  }
   return true;
 }
 
@@ -4406,7 +4411,7 @@ void SulokiContext::InternalSwap(SulokiContext* other) {
   reserved_.UnsafeArenaSwap(&other->reserved_);
   urname_.Swap(&other->urname_);
   context_.Swap(&other->context_);
-  std::swap(msgori_, other->msgori_);
+  msgori_.Swap(&other->msgori_);
   std::swap(id_, other->id_);
   std::swap(b_, other->b_);
   std::swap(_has_bits_[0], other->_has_bits_[0]);
@@ -4594,7 +4599,7 @@ void SulokiContext::set_allocated_context(::std::string* context) {
   // @@protoc_insertion_point(field_set_allocated:suloki.SulokiContext.context)
 }
 
-// optional .suloki.SulokiMessage msgOri = 5;
+// optional string msgOri = 5;
 bool SulokiContext::has_msgori() const {
   return (_has_bits_[0] & 0x00000004u) != 0;
 }
@@ -4605,37 +4610,54 @@ void SulokiContext::clear_has_msgori() {
   _has_bits_[0] &= ~0x00000004u;
 }
 void SulokiContext::clear_msgori() {
-  if (msgori_ != NULL) msgori_->::suloki::SulokiMessage::Clear();
+  msgori_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   clear_has_msgori();
 }
-const ::suloki::SulokiMessage& SulokiContext::msgori() const {
+const ::std::string& SulokiContext::msgori() const {
   // @@protoc_insertion_point(field_get:suloki.SulokiContext.msgOri)
-  return msgori_ != NULL ? *msgori_
-                         : *::suloki::SulokiMessage::internal_default_instance();
+  return msgori_.GetNoArena();
 }
-::suloki::SulokiMessage* SulokiContext::mutable_msgori() {
+void SulokiContext::set_msgori(const ::std::string& value) {
   set_has_msgori();
-  if (msgori_ == NULL) {
-    msgori_ = new ::suloki::SulokiMessage;
-  }
-  // @@protoc_insertion_point(field_mutable:suloki.SulokiContext.msgOri)
-  return msgori_;
+  msgori_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:suloki.SulokiContext.msgOri)
 }
-::suloki::SulokiMessage* SulokiContext::release_msgori() {
+#if LANG_CXX11
+void SulokiContext::set_msgori(::std::string&& value) {
+  set_has_msgori();
+  msgori_.SetNoArena(
+    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
+  // @@protoc_insertion_point(field_set_rvalue:suloki.SulokiContext.msgOri)
+}
+#endif
+void SulokiContext::set_msgori(const char* value) {
+  set_has_msgori();
+  msgori_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:suloki.SulokiContext.msgOri)
+}
+void SulokiContext::set_msgori(const char* value, size_t size) {
+  set_has_msgori();
+  msgori_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+      ::std::string(reinterpret_cast<const char*>(value), size));
+  // @@protoc_insertion_point(field_set_pointer:suloki.SulokiContext.msgOri)
+}
+::std::string* SulokiContext::mutable_msgori() {
+  set_has_msgori();
+  // @@protoc_insertion_point(field_mutable:suloki.SulokiContext.msgOri)
+  return msgori_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+::std::string* SulokiContext::release_msgori() {
   // @@protoc_insertion_point(field_release:suloki.SulokiContext.msgOri)
   clear_has_msgori();
-  ::suloki::SulokiMessage* temp = msgori_;
-  msgori_ = NULL;
-  return temp;
+  return msgori_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-void SulokiContext::set_allocated_msgori(::suloki::SulokiMessage* msgori) {
-  delete msgori_;
-  msgori_ = msgori;
-  if (msgori) {
+void SulokiContext::set_allocated_msgori(::std::string* msgori) {
+  if (msgori != NULL) {
     set_has_msgori();
   } else {
     clear_has_msgori();
   }
+  msgori_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), msgori);
   // @@protoc_insertion_point(field_set_allocated:suloki.SulokiContext.msgOri)
 }
 

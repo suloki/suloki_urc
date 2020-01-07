@@ -1199,14 +1199,20 @@ class SulokiContext : public ::google::protobuf::Message /* @@protoc_insertion_p
   ::std::string* release_context();
   void set_allocated_context(::std::string* context);
 
-  // optional .suloki.SulokiMessage msgOri = 5;
+  // optional string msgOri = 5;
   bool has_msgori() const;
   void clear_msgori();
   static const int kMsgOriFieldNumber = 5;
-  const ::suloki::SulokiMessage& msgori() const;
-  ::suloki::SulokiMessage* mutable_msgori();
-  ::suloki::SulokiMessage* release_msgori();
-  void set_allocated_msgori(::suloki::SulokiMessage* msgori);
+  const ::std::string& msgori() const;
+  void set_msgori(const ::std::string& value);
+  #if LANG_CXX11
+  void set_msgori(::std::string&& value);
+  #endif
+  void set_msgori(const char* value);
+  void set_msgori(const char* value, size_t size);
+  ::std::string* mutable_msgori();
+  ::std::string* release_msgori();
+  void set_allocated_msgori(::std::string* msgori);
 
   // optional sint64 id = 2;
   bool has_id() const;
@@ -1241,7 +1247,7 @@ class SulokiContext : public ::google::protobuf::Message /* @@protoc_insertion_p
   ::google::protobuf::RepeatedPtrField< ::std::string> reserved_;
   ::google::protobuf::internal::ArenaStringPtr urname_;
   ::google::protobuf::internal::ArenaStringPtr context_;
-  ::suloki::SulokiMessage* msgori_;
+  ::google::protobuf::internal::ArenaStringPtr msgori_;
   ::google::protobuf::int64 id_;
   bool b_;
   friend struct protobuf_suloki_2eproto::TableStruct;
@@ -3459,7 +3465,7 @@ inline void SulokiContext::set_allocated_context(::std::string* context) {
   // @@protoc_insertion_point(field_set_allocated:suloki.SulokiContext.context)
 }
 
-// optional .suloki.SulokiMessage msgOri = 5;
+// optional string msgOri = 5;
 inline bool SulokiContext::has_msgori() const {
   return (_has_bits_[0] & 0x00000004u) != 0;
 }
@@ -3470,37 +3476,54 @@ inline void SulokiContext::clear_has_msgori() {
   _has_bits_[0] &= ~0x00000004u;
 }
 inline void SulokiContext::clear_msgori() {
-  if (msgori_ != NULL) msgori_->::suloki::SulokiMessage::Clear();
+  msgori_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   clear_has_msgori();
 }
-inline const ::suloki::SulokiMessage& SulokiContext::msgori() const {
+inline const ::std::string& SulokiContext::msgori() const {
   // @@protoc_insertion_point(field_get:suloki.SulokiContext.msgOri)
-  return msgori_ != NULL ? *msgori_
-                         : *::suloki::SulokiMessage::internal_default_instance();
+  return msgori_.GetNoArena();
 }
-inline ::suloki::SulokiMessage* SulokiContext::mutable_msgori() {
+inline void SulokiContext::set_msgori(const ::std::string& value) {
   set_has_msgori();
-  if (msgori_ == NULL) {
-    msgori_ = new ::suloki::SulokiMessage;
-  }
-  // @@protoc_insertion_point(field_mutable:suloki.SulokiContext.msgOri)
-  return msgori_;
+  msgori_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:suloki.SulokiContext.msgOri)
 }
-inline ::suloki::SulokiMessage* SulokiContext::release_msgori() {
+#if LANG_CXX11
+inline void SulokiContext::set_msgori(::std::string&& value) {
+  set_has_msgori();
+  msgori_.SetNoArena(
+    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
+  // @@protoc_insertion_point(field_set_rvalue:suloki.SulokiContext.msgOri)
+}
+#endif
+inline void SulokiContext::set_msgori(const char* value) {
+  set_has_msgori();
+  msgori_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:suloki.SulokiContext.msgOri)
+}
+inline void SulokiContext::set_msgori(const char* value, size_t size) {
+  set_has_msgori();
+  msgori_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+      ::std::string(reinterpret_cast<const char*>(value), size));
+  // @@protoc_insertion_point(field_set_pointer:suloki.SulokiContext.msgOri)
+}
+inline ::std::string* SulokiContext::mutable_msgori() {
+  set_has_msgori();
+  // @@protoc_insertion_point(field_mutable:suloki.SulokiContext.msgOri)
+  return msgori_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+inline ::std::string* SulokiContext::release_msgori() {
   // @@protoc_insertion_point(field_release:suloki.SulokiContext.msgOri)
   clear_has_msgori();
-  ::suloki::SulokiMessage* temp = msgori_;
-  msgori_ = NULL;
-  return temp;
+  return msgori_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline void SulokiContext::set_allocated_msgori(::suloki::SulokiMessage* msgori) {
-  delete msgori_;
-  msgori_ = msgori;
-  if (msgori) {
+inline void SulokiContext::set_allocated_msgori(::std::string* msgori) {
+  if (msgori != NULL) {
     set_has_msgori();
   } else {
     clear_has_msgori();
   }
+  msgori_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), msgori);
   // @@protoc_insertion_point(field_set_allocated:suloki.SulokiContext.msgOri)
 }
 

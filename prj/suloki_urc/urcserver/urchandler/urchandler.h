@@ -26,8 +26,8 @@ extern "C"
 #endif
 	URCHANDLER_API SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig);
 	URCHANDLER_API SulokiRet Start(void);
-	URCHANDLER_API SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg);
-	URCHANDLER_API SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context);
+	URCHANDLER_API SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg);
+	URCHANDLER_API SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context);
 	URCHANDLER_API SulokiRet Stop(void);
 	URCHANDLER_API SulokiRet Clear(void);
 

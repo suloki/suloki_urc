@@ -135,7 +135,7 @@ public:
 	}
 	virtual Suloki::Ret Run(void)
 	{
-		std::auto_ptr<suloki::SulokiMessage> msgSmart(new suloki::SulokiMessage());
+		std::auto_ptr<SulokiMessage> msgSmart(new SulokiMessage());
 		if (msgSmart.get() == NULL)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory error";
@@ -144,7 +144,7 @@ public:
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(*msgSmart);
 		msgSmart->set_businessid(SULOKI_SYSTEM_BISINESSID_PROTO);
 		msgSmart->set_messageid(SULOKI_START_MESSAGEID_SYSTEM_PROTO);
-		msgSmart->set_messagetype(suloki::SulokiMessage::notice);
+		msgSmart->set_messagetype(SulokiMessage::notice);
 		msgSmart->set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		suloki::SulokiStartMsgBody body;
 		body.set_infomation("");
@@ -207,6 +207,7 @@ public:
 		Suloki::Global::SetState(Suloki::CLEAR_GLOBALSTATE_BASEFRAMEWORK);
 		;
 		Suloki::MaintancerSingleton::Instance().Clear();
+		Suloki::MaintancerSingleton::Deinstance();
 		;
 		Suloki::UrcTcpServerSingleton::Deinstance();
 		Suloki::UrcClientHandlerSingleton::Deinstance();
@@ -214,6 +215,7 @@ public:
 		Suloki::UrcSingleton::Instance().Clear();
 		Suloki::UrcSingleton::Deinstance();
 		Suloki::EventManagerSingleton::Deinstance();
+		Suloki::IdManagerSingleton::Deinstance();
 		Suloki::ConfigSingleton::Deinstance();
 		return Suloki::SUCCESS;
 	}
@@ -238,8 +240,29 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 	MyAppStateMachineSingleton::Instance().Run();
-	MyAppStateMachineSingleton::Instance().Stop();
-	MyAppStateMachineSingleton::Instance().Clear();
+	try{
+		MyAppStateMachineSingleton::Instance().Stop();
+	}
+	catch (...){
+		SULOKI_FATAL_LOG_BASEFRAMEWORK << "suloki_framework's stop have exception";
+	}
+	try{
+		MyAppStateMachineSingleton::Instance().Clear();
+	}
+	catch (...){
+		SULOKI_FATAL_LOG_BASEFRAMEWORK << "suloki_framework's clear have exception";
+	}
+	try{
+		MyAppStateMachineSingleton::Deinstance();
+	}
+	catch (...){
+		SULOKI_FATAL_LOG_BASEFRAMEWORK << "suloki_framework's deinstance have exception";
+	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	Print_Mdebug();
+#endif
+	SULOKI_FATAL_LOG_BASEFRAMEWORK << "suloki_framework will quit after 1 second";
+	Suloki::Sleep(1000);
 	return 0;
 }
 

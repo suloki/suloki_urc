@@ -26,8 +26,8 @@ extern "C"
 #endif
 	TESTMAINMODULE_API SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig);
 	TESTMAINMODULE_API SulokiRet Start(void);
-	TESTMAINMODULE_API SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg);
-	TESTMAINMODULE_API SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context);
+	TESTMAINMODULE_API SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg);
+	TESTMAINMODULE_API SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context);
 	TESTMAINMODULE_API SulokiRet Stop(void);
 	TESTMAINMODULE_API SulokiRet Clear(void);
 

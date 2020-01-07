@@ -2,6 +2,71 @@
 #include "suloki_interface.h"
 #include "handler.h"
 
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+typedef boost::shared_mutex RwLockPolicy1;
+typedef boost::unique_lock<RwLockPolicy1>   WriteLock1;
+typedef boost::shared_lock<RwLockPolicy1>   ReadLock1;
+static RwLockPolicy1 g_lockMdebug;
+static std::map<long long, std::string> g_mapMdebug;
+void New_Mdebug(void* pTr, std::string str)
+{
+	if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface() != NULL)
+	{
+		MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->NewMdebug(pTr, str);
+		return;
+	}
+	WriteLock1 lock(g_lockMdebug);
+	g_mapMdebug.insert(std::pair<long long, std::string>((long long)pTr, str));
+}
+void Del_Mdebug(void* pTr)
+{
+	if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface() != NULL)
+	{
+		MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->DelMdebug(pTr);
+		return;
+	}
+	WriteLock1 lock(g_lockMdebug);
+	std::map<long long, std::string>::iterator iter = g_mapMdebug.find((long long)pTr);
+	if (iter != g_mapMdebug.end())
+		g_mapMdebug.erase(iter);
+}
+void Print_Mdebug(void)
+{
+	SULOKI_FATAL_LOG_BASEFRAMEWORK << "print memory debug info start";
+	{
+		WriteLock1 lock(g_lockMdebug);
+		for (std::map<long long, std::string>::iterator iter = g_mapMdebug.begin(); iter != g_mapMdebug.end(); iter++)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "memory leak:" << iter->second;
+		}
+	}
+	SULOKI_FATAL_LOG_BASEFRAMEWORK << "print memory debug info end";
+}
+SulokiMessage::SulokiMessage()
+{}
+SulokiMessage::~SulokiMessage()
+{
+	Del_Mdebug(this);
+}
+SulokiContext::SulokiContext()
+{}
+SulokiContext::~SulokiContext()
+{
+	Del_Mdebug(this);
+}
+#else
+SulokiMessage::SulokiMessage()
+{}
+SulokiMessage::~SulokiMessage()
+{}
+SulokiContext::SulokiContext()
+{}
+SulokiContext::~SulokiContext()
+{}
+#endif
+
+SulokiUrcModuleInterface* MySulokiUrcModuleInterface::m_pSulokiUrcModuleInterface = NULL;
+
 namespace Suloki
 {
 
@@ -94,6 +159,7 @@ void Sleep(Int mSec)
 #else
 #ifdef SULOKI_FREE_VERSION_GLOBAL
 #else
+
 #endif
 #endif
 
@@ -217,19 +283,29 @@ IdManager::IdManager(Int maxId, bool bCanfree) throw() : m_idFree(0), m_bCanfree
 	m_bCanfree = bCanfree;
 }
 IdManager::~IdManager()
-{}
+{
+	m_idQueue.Clear();
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(this)
+#endif
+}
 Int IdManager::GetFreeId(void)
 {
 	std::auto_ptr<Int> idSmart = m_idQueue.Pop();
-	if(idSmart.get() != NULL)
+	if (idSmart.get() != NULL)
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(idSmart.get());
+#endif
 		return *idSmart;
+	}
 	if (m_maxId > 0 && m_idFree >= m_maxId)
 		return -1;
 	Int id = SULOKI_INCREMENT_GLOBAL(&m_idFree);
 	id--;
 	return id;
 }
-Ret IdManager::FreeId(Int id)
+Ret IdManager::FreeId(Int id, std::string strMdebug)
 {
 	if(id < 0)
 		return INVALIDPARA_ERRORCODE;
@@ -241,6 +317,12 @@ Ret IdManager::FreeId(Int id)
 		SULOKI_FATAL_LOG_BASEFRAMEWORK << "no memory";
 		return NOMEMORY_ERRORCODE;
 	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	std::stringstream strStream;
+	strStream << strMdebug << "_" << id;
+	strMdebug = strStream.str();
+	NEW_MDEBUG(idSmart.get(), strMdebug);
+#endif
 	m_idQueue.Push(idSmart);
 	return SUCCESS;
 }
@@ -250,6 +332,9 @@ ThreadPool::ThreadPool() :m_bInited(false), m_bCleared(false), m_worker(m_ioServ
 ThreadPool::~ThreadPool()
 {
 	Clear();
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(this)
+#endif
 }
 Ret ThreadPool::Init(Int threadNum)
 {
@@ -294,6 +379,9 @@ EventManager::EventManager()throw()
 	m_idManagerSmart = std::auto_ptr<IdManager>(new IdManager(MAXNUM_THREAD, true));
 	if (m_idManagerSmart.get() == NULL)
 		throw Exception("no memory");
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_idManagerSmart.get(), "");
+#endif
 	for (Int i = 0; i < MAXNUM_THREAD + 2; i++)
 	{
 		m_ready[i] = false;
@@ -305,39 +393,76 @@ EventManager::EventManager()throw()
 		m_timer[i] = new boost::asio::steady_timer(m_ioService);
 		if (m_timer[i] == NULL)
 			throw Exception("no memory1");
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(m_timer[i], "");
+#endif
 	}
 	m_timerForever = new boost::asio::steady_timer(m_ioService);
 	if (m_timerForever == NULL)
 		throw Exception("no memory2");
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_timerForever, "");
+#endif
 	//
 	m_threadRunnedSmart = std::auto_ptr<boost::thread>(new boost::thread(boost::bind(&EventManager::Run, this)));
 	if (m_threadRunnedSmart.get() == NULL)
 		throw Exception("no memory3");
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_threadRunnedSmart.get(), "");
+#endif
 }
 EventManager::~EventManager()
 {
+	if (m_timerForever != NULL)
+	{
+		m_timerForever->cancel();
+	}
 	for (Int i = 0; i < MAXNUM_THREAD + 2; i++)
 	{
 		if (m_timer[i] != NULL)
-			delete m_timer[i];
+			m_timer[i]->cancel();
 	}
-	if (m_timerForever != NULL)
-		delete m_timerForever;
 	m_ioService.stop();
 	if (m_threadRunnedSmart.get() != NULL)
 		m_threadRunnedSmart->join();
+	//?????
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	if (m_timerForever != NULL)
+	{
+		delete m_timerForever;
+		DEL_MDEBUG(m_timerForever)
+	}
+#endif
+	for (Int i = 0; i < MAXNUM_THREAD + 2; i++)
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		if (m_timer[i] != NULL)
+		{
+			delete m_timer[i];
+			DEL_MDEBUG(m_timer[i])
+		}
+#endif
+	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(m_threadRunnedSmart.get())
+	m_threadRunnedSmart.reset(NULL);
+#endif
+	//
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(this)
+#endif
 }
 void EventManager::FreeEvent(Int id)
 {
 	if (!(id >= 0 && id < MAXNUM_THREAD))
 		return;
-	m_idManagerSmart->FreeId(id);
+	m_idManagerSmart->FreeId(id, __FUNCTION__);
 }
 Int EventManager::GetFreeEvent(void)
 {
 	return m_idManagerSmart->GetFreeId();
 }
-Ret EventManager::Wait(Int id, std::string strUrcKey, Int timeout, std::auto_ptr<suloki::SulokiMessage>& msgSmart)
+Ret EventManager::Wait(Int id, std::string strUrcKey, Int timeout, std::auto_ptr<SulokiMessage>& msgSmart)
 {
 	if (!(id >= 0 && id < MAXNUM_THREAD))
 		return INVALIDPARA_ERRORCODE;
@@ -356,21 +481,21 @@ Ret EventManager::Wait(Int id, std::string strUrcKey, Int timeout, std::auto_ptr
 	}
 	if (bTimeout)
 	{
-		m_idManagerSmart->FreeId(id);
+		m_idManagerSmart->FreeId(id, __FUNCTION__);
 		return TIMEOUT_ERRORCODE;
 	}
-	m_idManagerSmart->FreeId(id);
+	m_idManagerSmart->FreeId(id, __FUNCTION__);
 	return SUCCESS;
 }
-Ret EventManager::Notify(Int id, std::auto_ptr<suloki::SulokiMessage> msgSmart)
+Ret EventManager::Notify(Int id, std::auto_ptr<SulokiMessage> msgSmart)
 {
-	if (!(id >= 0 && id < MAXNUM_THREAD && msgSmart.get() != NULL && msgSmart->messagetype() == suloki::SulokiMessage::response))
+	if (!(id >= 0 && id < MAXNUM_THREAD && msgSmart.get() != NULL && msgSmart->messagetype() == SulokiMessage::response))
 		return INVALIDPARA_ERRORCODE;
 	//
 	//std::stringstream strStream;
 	//strStream << SULOKI_URCSYS_RESOURCE_URC_BASE << "response/" << msgSmart->businessid << "_" << msgSmart->messageid << "_" << msgSmart->sequencenumber;
 	//
-	//boost::function<void(Int, std::string, std::auto_ptr<suloki::SulokiMessage>, bool)> func;
+	//boost::function<void(Int, std::string, std::auto_ptr<SulokiMessage>, bool)> func;
 	//if (UrcSingleton::Instance().DelUr_Urcsys(strStream.str(), func) != SUCCESS)
 	//	return URC_UNEXISTED;
 	//
@@ -388,6 +513,9 @@ Ret EventManager::AsyncTimer(Int timeout, std::string strUrcKey)
 	boost::asio::steady_timer* pTimer = new boost::asio::steady_timer(m_ioService);
 	if (pTimer == NULL)
 		return FAIL;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(pTimer, strUrcKey);
+#endif
 	pTimer->expires_from_now(std::chrono::milliseconds(timeout));
 	pTimer->async_wait(std::bind(&EventManager::MyAsyncTimeout, this, (Uint)pTimer, strUrcKey));
 	return SUCCESS;
@@ -395,20 +523,25 @@ Ret EventManager::AsyncTimer(Int timeout, std::string strUrcKey)
 void EventManager::MyAsyncTimeout(Uint timerPtr, std::string strUrcKey)
 {
 	std::auto_ptr<boost::asio::steady_timer> timerSmart((boost::asio::steady_timer*)timerPtr);
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(timerSmart.get());
+#endif
 	//boost::function<void(Uint, bool)> func;
 	Urc::AsyncNewFunc func;
 	if (UrcSingleton::Instance().DelUr_Urcsys(strUrcKey, func) != SUCCESS)
 		return;
 	//std::cout << "async timeout, urc name:" << strUrcKey << ";timeout:" << true << std::endl;
-	//suloki::SulokiMessage* pMsg = new suloki::SulokiMessage();
+	//SulokiMessage* pMsg = new SulokiMessage();
 	//func(NULL, true);
-	suloki::SulokiContext context;
+	SulokiContext context;
 	context.set_b(true);
-	std::auto_ptr<suloki::SulokiMessage> msgSmart;
+	std::auto_ptr<SulokiMessage> msgSmart;
 	func(msgSmart, context);
 }
 void EventManager::MyTimeout(Int id, std::string strUrcKey)
 {
+	if(Global::GetState() >= STOP_GLOBALSTATE_BASEFRAMEWORK)
+		return;
 	if (id < 0)
 	{
 		if (!(Global::GetState() >= STOP_GLOBALSTATE_BASEFRAMEWORK))
@@ -423,7 +556,7 @@ void EventManager::MyTimeout(Int id, std::string strUrcKey)
 		if (!(id >= 0 && id < MAXNUM_THREAD))
 			return;
 		//
-		//boost::function<void(Int, std::string, std::auto_ptr<suloki::SulokiMessage>, bool)> func;
+		//boost::function<void(Int, std::string, std::auto_ptr<SulokiMessage>, bool)> func;
 		//boost::function<void(Uint, bool)> func;
 		Urc::AsyncNewFunc func;
 		if (UrcSingleton::Instance().DelUr_Urcsys<Urc::AsyncNewFunc>(strUrcKey, func) != SUCCESS)
@@ -461,6 +594,18 @@ void UrcTcpConnection::HandleException(const boost::system::error_code& error)
 			UrcSingleton::Instance().DelNoSqlData(m_userData.m_strServiceStateUrName, strVal);
 			m_userData.m_strServiceStateUrName = "";
 		}
+		//
+		for (std::set<std::string>::iterator iter = m_userData.m_subSet.begin(); iter != m_userData.m_subSet.end(); iter++)
+		{
+			size_t pos = iter->find("___");
+			if (pos != std::string::npos)
+			{
+				std::string strUrName = iter->substr(0, pos);
+				pos += strlen("___");
+				std::string strVal = iter->substr(pos, iter->length()-pos);
+				UrcSingleton::Instance().UnsubscribeUr(strUrName, strVal);
+			}
+		}
 	}
 	else
 	{
@@ -486,12 +631,15 @@ void UrcTcpConnection::HandleRead(std::string& strMsg)
 	{
 		//std::cout << "server recv ok, msg:" << strMsg << std::endl;
 		//WriteAsync(strMsg.c_str(), strMsg.length());
-		std::auto_ptr<suloki::SulokiMessage> msgSmart(new suloki::SulokiMessage());
+		std::auto_ptr<SulokiMessage> msgSmart(new SulokiMessage());
 		if (msgSmart.get() == NULL)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
 			return;
 		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(msgSmart.get(), "");
+#endif
 		if (SulokiProtoSwrap::DecodeProtocol(strMsg.c_str(), strMsg.length(), *msgSmart) != SUCCESS)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "DecodeProtocol error";
@@ -518,52 +666,147 @@ void UrcTcpConnection::HandleRead(std::string& strMsg)
 		//push router
 		msgSmart->add_routers(m_userData.m_strName);
 		//
-		if ((msgSmart->messageid() == SULOKI_REGSERVICE_MESSAGEID_URC_PROTO || msgSmart->messageid() == SULOKI_UNREGSERVICE_MESSAGEID_URC_PROTO)
-			&& msgSmart->messagetype() == suloki::SulokiMessage::request && msgSmart->businessid() == SULOKI_URC_BISINESSID_PROTO)
+		if (msgSmart->messagetype() == SulokiMessage::request && msgSmart->businessid() == SULOKI_URC_BISINESSID_PROTO)
 		{
-			suloki::SulokiOperatorUrcMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(*msgSmart, body);
-			//
-			suloki::SulokiMessage res;
-			Suloki::SulokiProtoSwrap::MakeResMessage(*msgSmart, res);
-			suloki::SulokiOperatorUrcMsgBody resBody;
-			//
-			if (!msgSmart->has_urckey())
+			if (msgSmart->messageid() == SULOKI_REGSERVICE_MESSAGEID_URC_PROTO || msgSmart->messageid() == SULOKI_UNREGSERVICE_MESSAGEID_URC_PROTO)
 			{
-				SULOKI_ERROR_LOG_BASEFRAMEWORK << "has_urckey false error";
+				suloki::SulokiOperatorUrcMsgBody body;
+				if (Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(*msgSmart, body) != SUCCESS)
+				{
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+					return;
+				}
+				//
+				SulokiMessage res;
+				Suloki::SulokiProtoSwrap::MakeResMessage(*msgSmart, res);
+				suloki::SulokiOperatorUrcMsgBody resBody;
+				;
+				Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+				//
+				if (!msgSmart->has_urckey())
+				{
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "has_urckey false error";
+					return;
+				}
+				std::string urName = msgSmart->urckey();
+				urName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
+				urName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
+				//std::cout << urName << std::endl;
+				if (!msgSmart->has_urcval() || !msgSmart->has_dir())
+				{
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "has_urcval false or has_dir error";
+					return;
+				}
+				std::string& strVal = (std::string&)msgSmart->urcval();
+				Suloki::Ret ret = SUCCESS;
+				if (msgSmart->messageid() == SULOKI_REGSERVICE_MESSAGEID_URC_PROTO)
+				{
+					ret = UrcSingleton::Instance().AddNoSqlData(urName, strVal, msgSmart->dir());
+					if (ret == SUCCESS)
+						m_userData.m_strServiceStateUrName = urName;
+					else
+					{
+						SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddNoSqlData error, urname:" << urName;
+					}
+				}
+				else
+				{
+					ret = UrcSingleton::Instance().DelNoSqlData(urName, strVal);
+					if (ret == SUCCESS)
+						m_userData.m_strServiceStateUrName = "";
+					else
+					{
+						SULOKI_ERROR_LOG_BASEFRAMEWORK << "DelNoSqlData error, urname:" << urName;
+					}
+				}
+				res.set_errorcode(ret);
+				//
+				//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+				WriteAsync(res);// strResMsg.c_str(), strResMsg.length());
 				return;
-			}
-			std::string urName = msgSmart->urckey();
-			urName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
-			urName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
-			//std::cout << urName << std::endl;
-			if (!msgSmart->has_urcval() || !msgSmart->has_dir())
-			{
-				SULOKI_ERROR_LOG_BASEFRAMEWORK << "has_urcval false or has_dir error";
-				return;
-			}
-			std::string& strVal = (std::string&)msgSmart->urcval();
-			Suloki::Ret ret = SUCCESS;
-			if (msgSmart->messageid() == SULOKI_REGSERVICE_MESSAGEID_URC_PROTO)
-			{
-				ret = UrcSingleton::Instance().AddNoSqlData(urName, strVal, msgSmart->dir());
-				if (ret == SUCCESS)
-					m_userData.m_strServiceStateUrName = urName;
 			}
 			else
+			if (msgSmart->messageid() == SULOKI_SUBSCRIBE_MESSAGEID_URC_PROTO || msgSmart->messageid() == SULOKI_UNSUBSCRIBE_MESSAGEID_URC_PROTO)
 			{
-				ret = UrcSingleton::Instance().DelNoSqlData(urName, strVal);
-				if (ret == SUCCESS)
-					m_userData.m_strServiceStateUrName = "";
+				//suloki::SulokiOperatorUrcMsgBody body;
+				//if (Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiOperatorUrcMsgBody>(*msgSmart, body) != SUCCESS)
+				//{
+				//	SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiOperatorUrcMsgBody error";
+				//	return;
+				//}
+				//
+				SulokiMessage res;
+				Suloki::SulokiProtoSwrap::MakeResMessage(*msgSmart, res);
+				//suloki::SulokiOperatorUrcMsgBody resBody;
+				//;
+				//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+				//
+				if (!msgSmart->has_urckey())
+				{
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "has_urckey false error";
+					return;
+				}
+				std::string urName = msgSmart->urckey();
+				urName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
+				urName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
+				//std::cout << urName << std::endl;
+				if (!msgSmart->has_urcval())
+				{
+					SULOKI_ERROR_LOG_BASEFRAMEWORK << "has_urcval false error";
+					return;
+				}
+				std::string strVal = (std::string&)msgSmart->urcval();
+				strVal.insert(0, m_userData.m_strServiceStateUrName);
+				Suloki::Ret ret = SUCCESS;
+				if (msgSmart->messageid() == SULOKI_SUBSCRIBE_MESSAGEID_URC_PROTO)
+				{
+					std::auto_ptr<SulokiContext> contextOriSmart(new SulokiContext());
+					if (contextOriSmart.get() == NULL)
+					{
+						SULOKI_ERROR_LOG_BASEFRAMEWORK << "new SulokiContext error";
+						return;
+					}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+					NEW_MDEBUG(contextOriSmart.get(), "");
+#endif
+					contextOriSmart->set_urname(m_userData.m_strName);
+					ret = UrcSingleton::Instance().SubscribeUr(urName, strVal, Urc::FuncSub, contextOriSmart);
+					if (ret != SUCCESS)
+					{
+						SULOKI_ERROR_LOG_BASEFRAMEWORK << "SubscribeUr error, urname:" << urName << "subname:" << strVal;
+					}
+					else
+					{
+						std::stringstream strStream;
+						strStream << urName << "___" << strVal;
+						m_userData.m_subSet.insert(strStream.str());
+					}
+				}
+				else
+				{
+					ret = UrcSingleton::Instance().UnsubscribeUr(urName, strVal);
+					if (ret != SUCCESS)
+					{
+						SULOKI_ERROR_LOG_BASEFRAMEWORK << "UnsubscribeUr error, urname:" << urName << "subname:" << strVal;
+					}
+					else
+					{
+						std::stringstream strStream;
+						strStream << urName << "___" << strVal;
+						std::set<std::string>::iterator iter = m_userData.m_subSet.find(strStream.str());
+						if (iter != m_userData.m_subSet.end())
+							m_userData.m_subSet.erase(iter);
+					}
+				}
+				res.set_errorcode(ret);
+				//
+				//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
+				WriteAsync(res);// strResMsg.c_str(), strResMsg.length());
+				return;
 			}
-			res.set_errorcode(ret);
-			//
-			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(res, resBody);
-			WriteAsync(res);// strResMsg.c_str(), strResMsg.length());
-			return;
 		}
 		//
-		suloki::SulokiContext context;
+		SulokiContext context;
 		context.set_urname(m_userData.m_strName);
 		context.set_b(m_bServer);
 		UrcSingleton::Instance().Post("main", msgSmart, context);
@@ -571,18 +814,21 @@ void UrcTcpConnection::HandleRead(std::string& strMsg)
 	else
 	{
 		//std::cout << "client recv ok, msg:" << strMsg << std::endl;
-		std::auto_ptr<suloki::SulokiMessage> msgSmart(new suloki::SulokiMessage());
+		std::auto_ptr<SulokiMessage> msgSmart(new SulokiMessage());
 		if (msgSmart.get() == NULL)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
 			return;
 		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(msgSmart.get(), "");
+#endif
 		if (SulokiProtoSwrap::DecodeProtocol(strMsg.c_str(), strMsg.length(), *msgSmart) != SUCCESS)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "DecodeProtocol error";
 			return;
 		}
-		if (msgSmart->messagetype() == suloki::SulokiMessage::response)
+		if (msgSmart->messagetype() == SulokiMessage::response)
 		{
 			std::stringstream strStream;
 			if (msgSmart->routers_size() > 0)//msgSmart->routers(msgSmart->routers_size() - 1) << "_" <<
@@ -593,14 +839,14 @@ void UrcTcpConnection::HandleRead(std::string& strMsg)
 			Urc::AsyncNewFunc func;
 			if (UrcSingleton::Instance().DelUr_Urcsys<Urc::AsyncNewFunc>(strStream.str(), func) == SUCCESS)
 			{
-				suloki::SulokiContext context;
+				SulokiContext context;
 				context.set_b(false);
 				//func(msgSmart, context);
 				UrcSingleton::Instance().PostFuncRes(func, msgSmart, context);
 				return;
 			}
 		}
-		suloki::SulokiContext context;
+		SulokiContext context;
 		context.set_urname(m_userData.m_strName);
 		context.set_b(m_bServer);
 		UrcSingleton::Instance().Post("main", msgSmart, context);
@@ -636,14 +882,63 @@ UrcTcpServer::~UrcTcpServer()
 			UrcSingleton::Instance().DelUr_Urcsys< boost::shared_ptr<BaseRoot> >(*iter, baseSmartPtr);
 		}
 	}
+	//????? about sql data rc
+	{
+		std::string strSqlUrName = SULOKI_SQL_NAME_URC_BASE;
+		strSqlUrName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
+		strSqlUrName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
+		std::string stdVal = "sql";
+		UrcSingleton::Instance().DelUr(strSqlUrName, stdVal);
+	}
+	//
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(m_threadRunnedSmart.get())
+	m_threadRunnedSmart.reset(NULL);
+#endif
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(m_acceptorSmart.get())
+	m_acceptorSmart.reset(NULL);
+#endif
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(m_ioServiceSmart.get())
+	m_ioServiceSmart.reset(NULL);
+#endif
+	//
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(this)
+#endif
 }
 Ret UrcTcpServer::Start(Int port)
 {
 	SULOKI_INFO_LOG_BASEFRAMEWORK << "urc port acceptted:" << port;
 	m_ioServiceSmart = std::auto_ptr<boost::asio::io_service>(new boost::asio::io_service());
+	if (m_ioServiceSmart.get() == NULL)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+		return FAIL;
+	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_ioServiceSmart.get(), "");
+#endif
 	m_acceptorSmart = std::auto_ptr<boost::asio::ip::tcp::acceptor>(new boost::asio::ip::tcp::acceptor(*m_ioServiceSmart, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port)));
+	if (m_acceptorSmart.get() == NULL)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+		return FAIL;
+	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_acceptorSmart.get(), "");
+#endif
 	Accept();
 	m_threadRunnedSmart = std::auto_ptr<boost::thread>(new boost::thread(boost::bind(&UrcTcpServer::Run, this)));
+	if (m_threadRunnedSmart.get() == NULL)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+		return FAIL;
+	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_threadRunnedSmart.get(), "");
+#endif
 	//?????
 	std::string strUrcServerAddr;
 	if (!(ConfigSingleton::Instance().GetConfig(SULOKI_URCSERVERADDR_KEY_CONFIG_BASE, strUrcServerAddr) == SUCCESS && strUrcServerAddr.find("_1._1._1._1:") != std::string::npos))
@@ -672,6 +967,17 @@ Ret UrcTcpServer::Start(Int port)
 	else
 	{
 		UrcSingleton::Instance().SetRootFlag();
+		//????? about sql data rc
+		std::string strSqlUrName = SULOKI_SQL_NAME_URC_BASE;
+		strSqlUrName.erase(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE.length());
+		strSqlUrName.insert(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE);
+		std::string stdVal = "sql";
+		if (UrcSingleton::Instance().AddUr(strSqlUrName, stdVal, SULOKI_NOSQLDATA_TYPE_URC_BASE) != SUCCESS)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUr error, urname:" << strSqlUrName;
+			return FAIL;
+		}
+		//
 		SULOKI_INFO_LOG_BASEFRAMEWORK << "mean this urc is root server";	
 	}
 	return SUCCESS;
@@ -680,9 +986,13 @@ void UrcTcpServer::HandleAccept(std::string strConnname, boost::shared_ptr<UrcTc
 {
 	boost::shared_ptr<BaseRoot> baseSmartPtr = boost::static_pointer_cast<BaseRoot>(connSmartPtr);
 	if (UrcSingleton::Instance().AddUrIn<boost::shared_ptr<BaseRoot>, BaseRoot>(strConnname, baseSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0, Loki::Type2Type< boost::shared_ptr<BaseRoot> >()) != SUCCESS)
+	{
 		SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUr error";
+	}
 	else
+	{
 		SULOKI_INFO_LOG_BASEFRAMEWORK << "HandleAccept AddUr ok.strConnname:" << strConnname;
+	}
 }
 
 Ret Urc::Init(void)
@@ -711,6 +1021,9 @@ Ret Urc::Init(void)
 		handlerSmartPtr = boost::shared_ptr< SulokiHandleModuleInterface >(new SulokiCppHandleModule(iter->m_path));
 		if (handlerSmartPtr.get() == NULL)
 			return FAIL;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(handlerSmartPtr.get(), "");
+#endif
 		m_mainHandlerSmartPtr = handlerSmartPtr;
 		//
 		if (handlerSmartPtr.get() == NULL)
@@ -724,6 +1037,9 @@ Ret Urc::Init(void)
 		boost::shared_ptr<Module> moduleSmartPtr(new Module(iter->m_name, handlerSmartPtr, iter->m_config));
 		if (moduleSmartPtr.get() == NULL)
 			return FAIL;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(moduleSmartPtr.get(), "");
+#endif
 		//if (AddUrIn<boost::shared_ptr<Module>, Module>(strUrName, moduleSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0, Loki::Type2Type< boost::shared_ptr<Module> >()) != SUCCESS)
 		boost::shared_ptr<BaseRoot> baseSmartPtr = boost::static_pointer_cast<BaseRoot>(moduleSmartPtr);
 		if (UrcSingleton::Instance().AddUrIn(strUrName, baseSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0, Loki::Type2Type< boost::shared_ptr<BaseRoot> >()) != SUCCESS)
@@ -804,6 +1120,11 @@ Ret Urc::Clear(void)
 			return FAIL;
 		if (moduleSmartPtr->m_handlerSmartPtr->Clear() != SUCCESS)
 			return FAIL;
+		//?????
+		{
+			boost::shared_ptr<BaseRoot> baseSmartPtr; //boost::shared_ptr<UrcTcpConnection> connSmartPtr;
+			UrcSingleton::Instance().DelUr_Urcsys< boost::shared_ptr<BaseRoot> >(strUrName, baseSmartPtr);
+		}
 	}
 	return SUCCESS;
 }
@@ -811,13 +1132,14 @@ Ret Urc::ConnAndReg(std::string strUrName, std::string ip, Uint port)
 {
 	if (m_bRoot)
 		return FAIL;
+	Ret ret = SUCCESS;
 	//connect
 	boost::asio::ip::tcp::endpoint ep(boost::asio::ip::address::from_string(ip), port);
 	boost::shared_ptr<UrcTcpConnection> connSmartPtr = UrcTcpServerSingleton::Instance().CreateClientConnection();
 	if (connSmartPtr.get() == NULL)
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
-		return FAIL;
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "create net conn fail";
+		return NET_CREATECONNFAIL_ERRORCODE;
 	}
 	try{
 		connSmartPtr->GetSocketRef().connect(ep);
@@ -825,17 +1147,18 @@ Ret Urc::ConnAndReg(std::string strUrName, std::string ip, Uint port)
 	}
 	catch (boost::system::system_error e){
 		SULOKI_ERROR_LOG_BASEFRAMEWORK << e.code();
-		return FAIL;
+		return NET_EXCEPTION_ERRORCODE;
 	}
 	//std::stringstream strStream;
 	//strStream << SULOKI_CONNECT2URCPATH_NET_URC_BASE << 0;
 	UrcTcpConnection::UserData userData(strUrName);// strStream.str());
 	connSmartPtr->SetUserData(userData);
 	boost::shared_ptr<BaseRoot> baseSmartPtr = boost::static_pointer_cast<BaseRoot>(connSmartPtr);
-	if (UrcSingleton::Instance().AddUrIn<boost::shared_ptr<BaseRoot>, BaseRoot>(strUrName, baseSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0, Loki::Type2Type< boost::shared_ptr<BaseRoot> >()) != SUCCESS)
+	ret = UrcSingleton::Instance().AddUrIn<boost::shared_ptr<BaseRoot>, BaseRoot>(strUrName, baseSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0, Loki::Type2Type< boost::shared_ptr<BaseRoot> >());
+	if (ret != SUCCESS)
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUr error ";// << __FILE__ << __LINE__;
-		return FAIL;
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUr error, error code:" << ret;// << __FILE__ << __LINE__;
+		return ret;
 	}
 	//reg
 	{
@@ -859,11 +1182,11 @@ Ret Urc::ConnAndReg(std::string strUrName, std::string ip, Uint port)
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "SerializeToString error";
 			return URC_ENCODEBODYPROTO_ERRORCODE;
 		}
-		suloki::SulokiMessage req;
+		SulokiMessage req;
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 		req.set_messageid(SULOKI_REGSERVICE_MESSAGEID_URC_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
+		req.set_messagetype(SulokiMessage::request);
 		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		req.set_urckey(strUrName);
 		req.set_urcval(strBody);
@@ -871,6 +1194,7 @@ Ret Urc::ConnAndReg(std::string strUrName, std::string ip, Uint port)
 		req.set_attrib(0);
 		req.set_dir(true);
 		suloki::SulokiOperatorUrcMsgBody body;
+		;
 		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
 		//
 		std::string strMsg;
@@ -880,7 +1204,7 @@ Ret Urc::ConnAndReg(std::string strUrName, std::string ip, Uint port)
 		if (id < 0)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "get GetFreeEvent fail";
-			return FAIL;
+			return URC_NOEVENT_ERRORCODE;
 		}
 		std::stringstream strStream;
 		if (req.routers_size() > 0)//tVal.routers(tVal.routers_size() - 1) << "_" <<
@@ -888,39 +1212,78 @@ Ret Urc::ConnAndReg(std::string strUrName, std::string ip, Uint port)
 		else
 			strStream << SULOKI_URCSYS_RESOURCE_URC_BASE << "response/" << req.businessid() << "_" << req.messageid() << "_" << req.sequencenumber();
 		//boost::function<void(Int, Uint, bool)> func = boost::bind(&Urc::FuncRes, this, id, _1, _1);
-		//suloki::SulokiContext context;
+		//SulokiContext context;
 		//context.set_id(id);
-		std::auto_ptr<suloki::SulokiContext> contextSmart(new suloki::SulokiContext());
+		std::auto_ptr<SulokiContext> contextSmart(new SulokiContext());
 		if (contextSmart.get() == NULL)
-			return FAIL;
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+			return NOMEMORY_ERRORCODE;
+		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(contextSmart.get(), "");
+#endif
 		contextSmart->set_id(id);
-		suloki::SulokiMessage* pMsgBack = contextSmart->mutable_msgori();
-		if (pMsgBack == NULL)
-			return FAIL;
-		SulokiProtoSwrap::MakeSimpleCopy(req, *pMsgBack);
+		//?????
+		//SulokiMessage* pMsgBack = contextSmart->mutable_msgori();
+		//if (pMsgBack == NULL)
+		//{
+		//	SULOKI_ERROR_LOG_BASEFRAMEWORK << "mutable_msgori error,maybe no memory";
+		//	return NOMEMORY_ERRORCODE;
+		//}
+		//SulokiProtoSwrap::MakeSimpleCopy(req, *pMsgBack);
 		AsyncNewFunc func(BindFirst(AsyncFunc(this, &Urc::FuncRes), contextSmart.release()));
-		if (AddUrIn(strStream.str(), func, SULOKI_EVENT_TYPE_URC_BASE, 0, false, -1, Loki::Type2Type<AsyncNewFunc>()) != SUCCESS)
+		ret = AddUrIn(strStream.str(), func, SULOKI_EVENT_TYPE_URC_BASE, 0, false, -1, Loki::Type2Type<AsyncNewFunc>());
+		if (ret != SUCCESS)
 		{
 			EventManagerSingleton::Instance().FreeEvent(id);
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUrIn fail";
-			return FAIL;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUrIn fail, error code:" << ret;
+			return ret;
 		}
 		//
 		connSmartPtr->WriteAsync(strMsg.c_str(), strMsg.length());
-		std::auto_ptr<suloki::SulokiMessage> resSmart;
-		if (EventManagerSingleton::Instance().Wait(id, strStream.str(), 1000, resSmart) != SUCCESS)
-			return TIMEOUT_ERRORCODE;
+		std::auto_ptr<SulokiMessage> resSmart;
+		ret = EventManagerSingleton::Instance().Wait(id, strStream.str(), 1000, resSmart);
+		if (ret != SUCCESS)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "event Wait fail, error code:" << ret;
+			return ret;
+		}
 		//req = *resSmart;
 		if (!resSmart->has_errorcode())
 			return FAIL;
+		std::auto_ptr<SulokiMessage> msgSmart(new SulokiMessage());
+		if (msgSmart.get() == NULL)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+		}
+		else
+		{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			NEW_MDEBUG(msgSmart.get(), "");
+#endif
+			Suloki::SulokiProtoSwrap::MakeBaseMessage(*msgSmart);
+			msgSmart->set_businessid(SULOKI_URC_BISINESSID_PROTO);
+			msgSmart->set_messageid(SULOKI_CONNTOURCSERVEROK_MESSAGEID_URC_PROTO);
+			msgSmart->set_messagetype(SulokiMessage::notice);
+			msgSmart->set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+			//msgSmart->set_urckey(strUrName);
+			//msgSmart->set_urcval(strSubName);
+			PostToMainModule(msgSmart);
+		}
 		return resSmart->errorcode();
 	}
 	return SUCCESS;
 }
-SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_INOUT suloki::SulokiMessage& req, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart)
+SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_INOUT SulokiMessage& req, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart)
 {
-	if (!(strGroupName.length() > 0 && req.messagetype() == suloki::SulokiMessage::request))
+	if (!(strGroupName.length() > 0 && req.messagetype() == SulokiMessage::request))
 		return INVALIDPARA_ERRORCODE;
+	if (strGroupName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (strServiceName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	Ret ret = SUCCESS;
 	if (strServiceName == "")
 	{
 		std::vector<std::string> nameVector;
@@ -942,29 +1305,31 @@ SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 		{
 			std::stringstream strUrStream;
 			strUrStream << SULOKI_REMOTED_RESOURCE_URC_BASE + SULOKI_SERVICES_PATHNAME_URC_BASE + strGroupName + "/";
-			suloki::SulokiMessage req;
+			SulokiMessage req;
 			Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 			req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 			req.set_messageid(SULOKI_OBTAINSTATES_MESSAGEID_URC_PROTO);
-			req.set_messagetype(suloki::SulokiMessage::request);
+			req.set_messagetype(SulokiMessage::request);
 			req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 			req.set_urckey(strUrStream.str());
 			//req.set_urcval(data);
 			//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
 			//req.set_attrib(0);
 			//req.set_dir(bDir);
-			//suloki::SulokiOperatorUrcMsgBody body;
-			//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-			if (ReqresMsgToUrcserver(strUrStream.str(), req, timeout) != SUCCESS)
+			suloki::SulokiOperatorUrcMsgBody stateBody;
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, stateBody);
+			ret = ReqresMsgToUrcserver(strUrStream.str(), req, timeout);
+			if (ret != SUCCESS)
 			{
-				SULOKI_ERROR_LOG_BASEFRAMEWORK << "can't obtaib service's state info in group from urc server";
-				return FAIL;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "can't obtaib service's state info in group from urc server, error code:" << ret;
+				return ret;
 			}
 			suloki::SulokiGroupStateUrcMsgBody body;
-			if (SulokiProtoSwrap::GetBody<suloki::SulokiGroupStateUrcMsgBody>(req, body) != SUCCESS)
+			ret = SulokiProtoSwrap::GetBody<suloki::SulokiGroupStateUrcMsgBody>(req, body);
+			if (ret != SUCCESS)
 			{
-				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody error";
-				return FAIL;
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiGroupStateUrcMsgBody error, error code:" << ret;
+				return ret;
 			}
 			Int serviceNum = body.stateres_size();
 			Int minBusy = 256;
@@ -1011,11 +1376,11 @@ SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 	{
 		std::stringstream strUrStream;
 		strUrStream << SULOKI_REMOTED_RESOURCE_URC_BASE + SULOKI_SERVICES_PATHNAME_URC_BASE + strGroupName + "/" + strServiceName;
-		suloki::SulokiMessage req;
+		SulokiMessage req;
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 		req.set_messageid(SULOKI_GET_MESSAGEID_URC_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
+		req.set_messagetype(SulokiMessage::request);
 		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		req.set_urckey(strUrStream.str());
 		//req.set_urcval(data);
@@ -1023,14 +1388,19 @@ SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 		//req.set_attrib(0);
 		//req.set_dir(bDir);
 		suloki::SulokiOperatorUrcMsgBody body;
+		;
 		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-		if (ReqresMsgToUrcserver(strUrStream.str(), req, timeout) != SUCCESS)
+		ret = ReqresMsgToUrcserver(strUrStream.str(), req, timeout);
+		if (ret != SUCCESS)
 		{
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "can't obtaib service's state info from urc server";
-			return FAIL;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "can't obtaib service's state info from urc server, error code:" << ret;
+			return ret;
 		}
 		if (!req.has_urcval())
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "urcval field have not existed error";
 			return INVALIDPARA_ERRORCODE;
+		}
 		std::string strState = req.urcval();
 		suloki::SulokiServiceStateUrcMsgBody state;
 		if (!state.ParseFromString(strState))
@@ -1043,10 +1413,11 @@ SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "service state invalid error";
 			return URC_DECODEBODYPROTO_ERRORCODE;
 		}
-		if (ConnAndReg(strStream.str(), state.ip(), state.port()) != SUCCESS)
+		ret = ConnAndReg(strStream.str(), state.ip(), state.port());
+		if (ret != SUCCESS)
 		{
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no connect to urc server";
-			return FAIL;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no connect to urc server, error code:" << ret;
+			return ret;
 		}
 	}
 	if (asyncCb == NULL)
@@ -1054,10 +1425,15 @@ SulokiRet Urc::ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
 	return ReqresMsgToUrcserver(SULOKI_REMOTED_RESOURCE_URC_BASE, req, timeout, asyncCbNew, strStream.str());
 }
-SulokiRet Urc::Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_IN suloki::SulokiMessage& notice)
+SulokiRet Urc::Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_IN SulokiMessage& notice)
 {
-	if (notice.messagetype() != suloki::SulokiMessage::notice)
+	if (notice.messagetype() != SulokiMessage::notice)
 		return INVALIDPARA_ERRORCODE;
+	if (strGroupName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (strServiceName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	Ret ret = SUCCESS;
 	std::stringstream strStream;
 	strStream << SULOKI_CONNECT2SERVICEPATH_NET_URC_BASE << strGroupName << "_" << strServiceName;
 	boost::shared_ptr<BaseRoot> baseSmartPtr;
@@ -1065,11 +1441,11 @@ SulokiRet Urc::Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 	{
 		std::stringstream strUrStream;
 		strUrStream << SULOKI_REMOTED_RESOURCE_URC_BASE + SULOKI_SERVICES_PATHNAME_URC_BASE + strGroupName + "/" + strServiceName;
-		suloki::SulokiMessage req;
+		SulokiMessage req;
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 		req.set_messageid(SULOKI_GET_MESSAGEID_URC_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
+		req.set_messagetype(SulokiMessage::request);
 		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		req.set_urckey(strUrStream.str());
 		//req.set_urcval(data);
@@ -1077,14 +1453,19 @@ SulokiRet Urc::Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 		//req.set_attrib(0);
 		//req.set_dir(bDir);
 		suloki::SulokiOperatorUrcMsgBody body;
+		;
 		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-		if (ReqresMsgToUrcserver(strUrStream.str(), req, 1000) != SUCCESS)
+		ret = ReqresMsgToUrcserver(strUrStream.str(), req, 1000);
+		if (ret != SUCCESS)
 		{
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "can't obtaib service's state info from urc server";
-			return FAIL;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "can't obtaib service's state info from urc server, error code:" << ret;
+			return ret;
 		}
 		if (!req.has_urcval())
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "urcval field have not existed error";
 			return INVALIDPARA_ERRORCODE;
+		}
 		std::string strState = req.urcval();
 		suloki::SulokiServiceStateUrcMsgBody state;
 		if (!state.ParseFromString(strState))
@@ -1097,38 +1478,47 @@ SulokiRet Urc::Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string 
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "service state invalid error";
 			return URC_DECODEBODYPROTO_ERRORCODE;
 		}
-		if (ConnAndReg(strStream.str(), state.ip(), state.port()) != SUCCESS)
+		ret = ConnAndReg(strStream.str(), state.ip(), state.port());
+		if (ret != SUCCESS)
 		{
-			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no connect to urc server";
-			return FAIL;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no connect to urc server, error code:" << ret;
+			return ret;
 		}
 	}
 	return NotifyMsgToUrcserver(SULOKI_REMOTED_RESOURCE_URC_BASE, notice, strStream.str());
 }
-SulokiRet Urc::PostToMainModule(SULOKI_IN std::auto_ptr<suloki::SulokiMessage> msgSmart)
+SulokiRet Urc::PostToMainModule(SULOKI_IN std::auto_ptr<SulokiMessage> msgSmart)
 {
 	//return PostToMainModuleUnvirtual(msgSmart);
-	suloki::SulokiContext context;
+	SulokiContext context;
 	Post("main", msgSmart, context);
 	return SUCCESS;
 }
 SulokiRet Urc::AddObject(SULOKI_IN std::string strUrName, SULOKI_IN boost::shared_ptr<BaseRoot>& baseSmartPtr)
 {
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
 	//return AddObjectUnvirtual(strUrName, baseSmartPtr);
 	return AddUr(strUrName, baseSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0);
 }
 SulokiRet Urc::DelObject(SULOKI_IN std::string strUrName, SULOKI_OUT boost::shared_ptr<BaseRoot>& baseSmartPtr)
 {
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
 	//return DelObjectUnvirtual(strUrName, baseSmartPtr);
 	return DelUr(strUrName, baseSmartPtr);
 }
 SulokiRet Urc::GetObject(SULOKI_IN std::string strUrName, SULOKI_OUT boost::shared_ptr<BaseRoot>& baseSmartPtr)
 {
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
 	//return GetObjectUnvirtual(strUrName, baseSmartPtr);
 	return GetUr(strUrName, baseSmartPtr);
 }
-SulokiRet Urc::GetSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT suloki::SulokiMessage& msg, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart)
+SulokiRet Urc::GetSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT SulokiMessage& msg, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart)
 {
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
 	//return GetSqlDataUnvirtual(strUrName, msg, timeout);
 	//return GetUr(strUrName, msg, timeout);
 	if (asyncCb == NULL)
@@ -1136,74 +1526,200 @@ SulokiRet Urc::GetSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT suloki::
 	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
 	return GetUr(strUrName, msg, timeout, asyncCbNew);
 }
-//virtual SulokiRet GetSqlDataAsync(std::string strUrName, suloki::SulokiMessage& msg, long timeout, SulokiAsyncCb asyncCb, std::auto_ptr<suloki::SulokiContext> contextOriSmart)
+//virtual SulokiRet GetSqlDataAsync(std::string strUrName, SulokiMessage& msg, long timeout, SulokiAsyncCb asyncCb, std::auto_ptr<SulokiContext> contextOriSmart)
 //{
 //	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
 //	//return GetSqlDataAsyncUnvirtual(strUrName, msg, timeout, asyncCbNew);
 //	return GetUr(strUrName, msg, timeout, asyncCbNew);
 //}
-SulokiRet Urc::AddNoSqlData(SULOKI_IN std::string strUrName, SULOKI_IN std::string& data, SULOKI_IN bool bDir, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart)
+SulokiRet Urc::AddNoSqlData(SULOKI_IN std::string strUrName, SULOKI_IN std::string& data, SULOKI_IN bool bDir, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart, bool bProxy)
 {
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (!bProxy)
+	{
+		if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+		{
+			return AddUr(strUrName, data, SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir);
+		}
+		SulokiMessage req;
+		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+		req.set_messageid(SULOKI_ADD_MESSAGEID_URC_PROTO);
+		req.set_messagetype(SulokiMessage::request);
+		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+		req.set_urckey(strUrName);
+		req.set_urcval(data);
+		req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+		req.set_attrib(0);
+		req.set_dir(bDir);
+		suloki::SulokiOperatorUrcMsgBody body;
+		;
+		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+		if (asyncCb == NULL)
+			return ReqresMsgToUrcserver(strUrName, req, timeout);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout);
+		AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
+		return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout, asyncCbNew);
+	}
+	/*
+	if (!(asyncCb != NULL && contextOriSmart.get() != NULL))
+		return INVALIDPARA_ERRORCODE;
+	if (!(strUrName.find(SULOKI_LOCAL_RESOURCE_URC_BASE) == 0 || strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) == 0))
+		return INVALIDPARA_ERRORCODE;
 	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
 	{
-		return AddUr(strUrName, data, SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir);
+		//AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
+		AsyncFunc asyncCbNew = AsyncFunc(asyncCb);
+		return SubscribeUr(strUrName, strSubName, asyncCbNew, contextOriSmart);
 	}
-	suloki::SulokiMessage req;
-	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
-	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
-	req.set_messageid(SULOKI_ADD_MESSAGEID_URC_PROTO);
-	req.set_messagetype(suloki::SulokiMessage::request);
-	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
-	req.set_urckey(strUrName);
-	req.set_urcval(data);
-	req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
-	req.set_attrib(0);
-	req.set_dir(bDir);
-	suloki::SulokiOperatorUrcMsgBody body;
-	Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-	if (asyncCb == NULL)
-		return ReqresMsgToUrcserver(strUrName, req, timeout);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout);
-	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
-	return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout, asyncCbNew);
-}
-SulokiRet Urc::DelNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart)
-{
-	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+	std::string strProxyUrName = SULOKI_URCSYS_RESOURCE_URC_BASE + SULOKI_PROXYS_PATHNAME_URC_BASE + strUrName + "_" + strSubName;
 	{
-		return DelUr(strUrName, data);
+		boost::shared_ptr<BaseRoot> baseSmartPtr;
+		if (GetUr_Urcsys(strProxyUrName, baseSmartPtr) == SUCCESS)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "sub have existed error";
+			return FAIL;
+		}
 	}
-	suloki::SulokiMessage req;
+	boost::shared_ptr<SubProxy> subProxySmartPtr(new SubProxy(strUrName, strSubName, asyncCb, contextOriSmart));
+	if (subProxySmartPtr.get() == NULL)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "new SubProxy error";
+		return FAIL;
+	}
+	boost::shared_ptr<BaseRoot> baseSmartPtr = boost::static_pointer_cast<BaseRoot>(subProxySmartPtr);
+	if (UrcSingleton::Instance().AddUrIn<boost::shared_ptr<BaseRoot>, BaseRoot>(strProxyUrName, baseSmartPtr, SULOKI_OBJECT_TYPE_URC_BASE, 0, true, 0, Loki::Type2Type< boost::shared_ptr<BaseRoot> >()) != SUCCESS)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "AddUr error";
+		return FAIL;
+	}
+	SulokiMessage req;
 	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
-	req.set_messageid(SULOKI_DEL_MESSAGEID_URC_PROTO);
-	req.set_messagetype(suloki::SulokiMessage::request);
+	req.set_messageid(SULOKI_SUBSCRIBE_MESSAGEID_URC_PROTO);
+	req.set_messagetype(SulokiMessage::request);
 	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 	req.set_urckey(strUrName);
-	//req.set_urcval(data);
+	req.set_urcval(strSubName);
 	//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
 	//req.set_attrib(0);
 	//req.set_dir(bDir);
-	suloki::SulokiOperatorUrcMsgBody body;
-	Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-	if (asyncCb == NULL)
-		return ReqresMsgToUrcserver(strUrName, req, timeout); //return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout);
-	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
-	return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout, asyncCbNew);
+	//suloki::SulokiOperatorUrcMsgBody body;
+	//;
+	//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+	Ret ret = ReqresMsgToUrcserver(strUrName, req, timeout);
+	if (ret != SUCCESS)
+	{
+		boost::shared_ptr<SubProxy> subProxySmartPtr;
+		UrcSingleton::Instance().DelUr_Urcsys< boost::shared_ptr<SubProxy> >(strProxyUrName, subProxySmartPtr);
+		return ret;
+	}
+	*/
+	return FAIL;
 }
-SulokiRet Urc::UpdateNoSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT std::string& data, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart)
+SulokiRet Urc::DelNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart, bool bProxy)
 {
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (!bProxy)
+	{
+		if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+		{
+			return DelUr(strUrName, data);
+		}
+		SulokiMessage req;
+		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+		req.set_messageid(SULOKI_DEL_MESSAGEID_URC_PROTO);
+		req.set_messagetype(SulokiMessage::request);
+		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+		req.set_urckey(strUrName);
+		//req.set_urcval(data);
+		//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+		//req.set_attrib(0);
+		//req.set_dir(bDir);
+		suloki::SulokiOperatorUrcMsgBody body;
+		;
+		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+		if (asyncCb == NULL)
+			return ReqresMsgToUrcserver(strUrName, req, timeout); //return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout);
+		AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
+		return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout, asyncCbNew);
+	}
+	/*
+	if (!(strUrName.find(SULOKI_LOCAL_RESOURCE_URC_BASE) == 0 || strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) == 0))
+		return INVALIDPARA_ERRORCODE;
+	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+	{
+		return UnsubscribeUr(strUrName, strSubName);
+	}
+	std::string strProxyUrName = SULOKI_URCSYS_RESOURCE_URC_BASE + SULOKI_PROXYS_PATHNAME_URC_BASE + strUrName + "_" + strSubName;
+	boost::shared_ptr<SubProxy> subProxySmartPtr;
+	UrcSingleton::Instance().DelUr_Urcsys< boost::shared_ptr<SubProxy> >(strProxyUrName, subProxySmartPtr);
+	//
+	SulokiMessage req;
+	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+	req.set_messageid(SULOKI_UNSUBSCRIBE_MESSAGEID_URC_PROTO);
+	req.set_messagetype(SulokiMessage::request);
+	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+	req.set_urckey(strUrName);
+	req.set_urcval(strSubName);
+	//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+	//req.set_attrib(0);
+	//req.set_dir(bDir);
+	//suloki::SulokiOperatorUrcMsgBody body;
+	//;
+	//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+	return ReqresMsgToUrcserver(strUrName, req, timeout);
+	*/
+	return FAIL;
+}
+SulokiRet Urc::UpdateNoSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT std::string& data, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart)
+{
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
 	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
 	{
 		std::string strValOri;
-		Ret ret = UpdateUr(strUrName, data, strValOri);
+		Int typeOld = 0;
+		Ret ret = UpdateUr(strUrName, data, strValOri, typeOld);
 		data = strValOri;
+		if (ret == SUCCESS && typeOld == SULOKI_NOSQLDATA_TYPE_URC_BASE)
+		{
+			std::auto_ptr<SulokiMessage> msgSmart(new SulokiMessage());
+			if (msgSmart.get() == NULL)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory, push sub will fail, strUrName:" << strUrName;
+			}
+			else
+			{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+				NEW_MDEBUG(msgSmart.get(), "");
+#endif
+				Suloki::SulokiProtoSwrap::MakeBaseMessage(*msgSmart);
+				msgSmart->set_businessid(SULOKI_URC_BISINESSID_PROTO);
+				msgSmart->set_messageid(SULOKI_UPDATE_MESSAGEID_URC_PROTO);
+				msgSmart->set_messagetype(SulokiMessage::push);
+				msgSmart->set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+				msgSmart->set_urckey(strUrName);
+				msgSmart->set_urcval(data);
+				msgSmart->set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+				//req.set_attrib(0);
+				//req.set_dir(bDir);
+				suloki::SulokiOperatorUrcMsgBody body;
+				;
+				Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(*msgSmart, body);
+				PostSub(strUrName, msgSmart);
+			}
+		}
 		return ret;
 	}
-	suloki::SulokiMessage req;
+	SulokiMessage req;
 	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 	req.set_messageid(SULOKI_UPDATE_MESSAGEID_URC_PROTO);
-	req.set_messagetype(suloki::SulokiMessage::request);
+	req.set_messagetype(SulokiMessage::request);
 	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 	req.set_urckey(strUrName);
 	req.set_urcval(data);
@@ -1211,53 +1727,146 @@ SulokiRet Urc::UpdateNoSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT std
 	//req.set_attrib(0);
 	//req.set_dir(bDir);
 	suloki::SulokiOperatorUrcMsgBody body;
+	;
 	Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
 	if (asyncCb == NULL)
 		return ReqresMsgToUrcserver(strUrName, req, timeout); //return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout);
 	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
 	return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout, asyncCbNew);
 }
-SulokiRet Urc::GetNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart)
+SulokiRet Urc::GetNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart, bool bProxy)
 {
-	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (!bProxy)
 	{
-		return GetUr(strUrName, data);
-	}
-	suloki::SulokiMessage req;
-	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
-	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
-	req.set_messageid(SULOKI_GET_MESSAGEID_URC_PROTO);
-	req.set_messagetype(suloki::SulokiMessage::request);
-	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
-	req.set_urckey(strUrName);
-	req.set_urcval(data);
-	//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
-	//req.set_attrib(0);
-	//req.set_dir(bDir);
-	suloki::SulokiOperatorUrcMsgBody body;
-	Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-	if (asyncCb == NULL)
-	{
-		Ret ret = ReqresMsgToUrcserver(strUrName, req, timeout); //AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout);
+		if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+		{
+			return GetUr(strUrName, data);
+		}
+		SulokiMessage req;
+		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+		req.set_messageid(SULOKI_GET_MESSAGEID_URC_PROTO);
+		req.set_messagetype(SulokiMessage::request);
+		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+		req.set_urckey(strUrName);
+		req.set_urcval(data);
+		//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+		//req.set_attrib(0);
+		//req.set_dir(bDir);
+		suloki::SulokiOperatorUrcMsgBody body;
+		;
+		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+		if (asyncCb == NULL)
+		{
+			Ret ret = ReqresMsgToUrcserver(strUrName, req, timeout); //AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout);
+			if (!req.has_urcval())
+				return FAIL;
+			data = req.urcval();
+			return ret;
+		}
+		AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
+		Ret ret = ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew); //AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout, asyncCbNew);
 		if (!req.has_urcval())
 			return FAIL;
 		data = req.urcval();
 		return ret;
 	}
-	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
-	Ret ret = ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew); //AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, false, timeout, asyncCbNew);
-	if (!req.has_urcval())
-		return FAIL;
-	data = req.urcval();
-	return ret;
+	/*
+	;
+	*/
+	return FAIL;
 }
 SulokiRet Urc::GetUrDirectory(SULOKI_IN std::string strUrPath, SULOKI_OUT std::vector<std::string>& nameVector)
 {
+	if (strUrPath.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
 	if (strUrPath.find(SULOKI_LOCAL_RESOURCE_URC_BASE) != 0)
 		return FAIL;
 	return GetUrDir(strUrPath, nameVector);
 }
-Ret Urc::ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg, Int timeout, std::string strObjName)
+SulokiRet Urc::Subscribe(SULOKI_IN std::string strUrName, SULOKI_IN std::string strSubName, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart)
+{
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (strSubName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+	{
+		AsyncFunc asyncCbNew = AsyncFunc(FuncSubLocal);
+		std::auto_ptr<SulokiContext> contextSmart(new SulokiContext());
+		if (contextSmart.get() == NULL)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+			return NOMEMORY_ERRORCODE;
+		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(contextSmart.get(), "");
+#endif
+		return SubscribeUr(strUrName, strSubName, asyncCbNew, contextSmart);
+	}
+	SulokiMessage req;
+	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+	req.set_messageid(SULOKI_SUBSCRIBE_MESSAGEID_URC_PROTO);
+	req.set_messagetype(SulokiMessage::request);
+	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+	req.set_urckey(strUrName);
+	req.set_urcval(strSubName);
+	//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+	//req.set_attrib(0);
+	//req.set_dir(bDir);
+	//suloki::SulokiOperatorUrcMsgBody body;
+	//;
+	//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+	if (asyncCb == NULL)
+		return ReqresMsgToUrcserver(strUrName, req, timeout);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout);
+	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
+	return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout, asyncCbNew);
+}
+SulokiRet Urc::Unsubscribe(SULOKI_IN std::string strUrName, SULOKI_IN std::string strSubName, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart)
+{
+	if (strUrName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (strSubName.find(SULOKI_STR_DEVIDED_SUB_URC_BASE) != std::string::npos)
+		return INVALIDPARA_ERRORCODE;
+	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
+	{
+		return UnsubscribeUr(strUrName, strSubName);
+	}
+	SulokiMessage req;
+	Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+	req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+	req.set_messageid(SULOKI_UNSUBSCRIBE_MESSAGEID_URC_PROTO);
+	req.set_messagetype(SulokiMessage::request);
+	req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+	req.set_urckey(strUrName);
+	req.set_urcval(strSubName);
+	//req.set_type(Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE);
+	//req.set_attrib(0);
+	//req.set_dir(bDir);
+	//suloki::SulokiOperatorUrcMsgBody body;
+	//;
+	//Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
+	if (asyncCb == NULL)
+		return ReqresMsgToUrcserver(strUrName, req, timeout);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout);
+	AsyncNewFunc asyncCbNew = AsyncNewFunc(BindFirst(AsyncFunc(asyncCb), contextOriSmart.release()));
+	return ReqresMsgToUrcserver(strUrName, req, timeout, asyncCbNew);//return AddUr(strUrName, req, Suloki::SULOKI_NOSQLDATA_TYPE_URC_BASE, 0, bDir, timeout, asyncCbNew);
+}
+void Urc::NewMdebug(void* pTr, std::string str)
+{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	New_Mdebug(pTr, str);
+#endif
+}
+void Urc::DelMdebug(void* pTr)
+{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	Del_Mdebug(pTr);
+#endif
+}
+Ret Urc::ReqresMsgToUrcserver(std::string strUrName, SulokiMessage& msg, Int timeout, std::string strObjName)
 {
 	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
 		return URC_INVALIDPATH_ERRORCODE;
@@ -1321,16 +1930,20 @@ Ret Urc::ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg,
 		else
 			strStream << SULOKI_URCSYS_RESOURCE_URC_BASE << "response/" << msg.businessid() << "_" << msg.messageid() << "_" << msg.sequencenumber();
 		//boost::function<void(Int, Uint, bool)> func = boost::bind(&Urc::FuncRes, this, id, _1, _1);
-		//suloki::SulokiContext context;
+		//SulokiContext context;
 		//context.set_id(id);
-		std::auto_ptr<suloki::SulokiContext> contextSmart(new suloki::SulokiContext());
+		std::auto_ptr<SulokiContext> contextSmart(new SulokiContext());
 		if (contextSmart.get() == NULL)
 			return FAIL;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(contextSmart.get(), "");
+#endif
 		contextSmart->set_id(id);
-		suloki::SulokiMessage* pMsgBack = contextSmart->mutable_msgori();
-		if (pMsgBack == NULL)
-			return FAIL;
-		SulokiProtoSwrap::MakeSimpleCopy(msg, *pMsgBack);
+		//?????
+		//SulokiMessage* pMsgBack = contextSmart->mutable_msgori();
+		//if (pMsgBack == NULL)
+		//	return FAIL;
+		//SulokiProtoSwrap::MakeSimpleCopy(msg, *pMsgBack);
 		AsyncNewFunc func(BindFirst(AsyncFunc(this, &Urc::FuncRes), contextSmart.release()));
 		if (AddUrIn(strStream.str(), func, SULOKI_EVENT_TYPE_URC_BASE, 0, false, -1, Loki::Type2Type<AsyncNewFunc>()) != SUCCESS)
 		{
@@ -1340,7 +1953,7 @@ Ret Urc::ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg,
 		}
 		//
 		connSmartPtr->WriteAsync(strMsg.c_str(), strMsg.length());
-		std::auto_ptr<suloki::SulokiMessage> resSmart;
+		std::auto_ptr<SulokiMessage> resSmart;
 		if (EventManagerSingleton::Instance().Wait(id, strStream.str(), timeout, resSmart) != SUCCESS)
 			return TIMEOUT_ERRORCODE;
 		msg = *resSmart;
@@ -1350,7 +1963,7 @@ Ret Urc::ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg,
 	}
 	return URC_INVALIDPATH_ERRORCODE;
 }
-Ret Urc::ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg, Int timeout, AsyncNewFunc asyncCb, std::string strObjName)
+Ret Urc::ReqresMsgToUrcserver(std::string strUrName, SulokiMessage& msg, Int timeout, AsyncNewFunc asyncCb, std::string strObjName)
 {
 	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
 		return URC_INVALIDPATH_ERRORCODE;
@@ -1431,7 +2044,7 @@ Ret Urc::ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg,
 	}
 	return URC_INVALIDPATH_ERRORCODE;
 }
-Ret Urc::NotifyMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg, std::string strObjName)
+Ret Urc::NotifyMsgToUrcserver(std::string strUrName, SulokiMessage& msg, std::string strObjName)
 {
 	if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) != 0)
 		return URC_INVALIDPATH_ERRORCODE;
@@ -1488,11 +2101,58 @@ Ret Urc::NotifyMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg,
 	}
 	return URC_INVALIDPATH_ERRORCODE;
 }
+void Urc::FuncSub(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew)
+{
+	std::auto_ptr<SulokiContext> contextSmart(pContextOri);
+	if (Suloki::Global::GetState() >= Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK)
+		return;
+	if (!contextSmart->has_urname())
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "no urName field error";
+		return;
+	}
+	if (msgSmart.get() == NULL)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "msgSmart is empty";
+		return;
+	}
+	boost::shared_ptr<BaseRoot> baseSmartPtr;
+	if (!(UrcSingleton::Instance().GetObject(contextSmart->urname(), baseSmartPtr) == Suloki::SUCCESS && baseSmartPtr.get() != NULL))
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetObject error, ur name:" << contextSmart->urname();
+		return;
+	}
+	boost::shared_ptr<Suloki::UrcTcpConnection> connSmartPtr = boost::dynamic_pointer_cast<Suloki::UrcTcpConnection>(baseSmartPtr);
+	if (connSmartPtr.get() == NULL)
+	{
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "dynamic_pointer_cast to Suloki::UrcTcpConnection error";
+		return;
+	}
+	if (msgSmart->has_urckey())
+	{
+		std::string strUrName = msgSmart->urckey();
+		strUrName.erase(0, Suloki::SULOKI_LOCAL_RESOURCE_URC_BASE.length());
+		strUrName.insert(0, Suloki::SULOKI_REMOTED_RESOURCE_URC_BASE);
+		msgSmart->set_urckey(strUrName);
+	}
+	connSmartPtr->WriteAsync(*msgSmart);
+}
+void Urc::FuncSubLocal(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew)
+{
+	std::auto_ptr<SulokiContext> contextSmart(pContextOri);
+	if (Suloki::Global::GetState() >= Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK)
+		return;
+	UrcSingleton::Instance().PostToMainModule(msgSmart);
+}
 
-Maintancer::Maintancer()
+Maintancer::Maintancer() :m_busyDegree(-1.0f)
 {}
 Maintancer::~Maintancer()
-{}
+{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(this)
+#endif
+}
 Ret Maintancer::Init(void)
 {
 	return SUCCESS;
@@ -1505,21 +2165,35 @@ Ret Maintancer::Start(void)
 		SULOKI_ERROR_LOG_BASEFRAMEWORK << "new m_timerSmart error";
 		return FAIL;
 	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_timerSmart.get(), "");
+#endif
 	m_threadRunnedSmart = std::auto_ptr<boost::thread>(new boost::thread(boost::bind(&Maintancer::Run, this)));
 	if (m_threadRunnedSmart.get() == NULL)
 	{
 		SULOKI_ERROR_LOG_BASEFRAMEWORK << "new m_threadRunnedSmart error";
 		return FAIL;
 	}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(m_threadRunnedSmart.get(), "");
+#endif
 	return SUCCESS;
 }
 Ret Maintancer::Stop(void)
 {
 	if (m_timerSmart.get() != NULL)
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(m_timerSmart.get());
+#endif
 		m_timerSmart.reset(NULL);
+	}
 	m_ioService.stop();
 	if (m_threadRunnedSmart.get() != NULL)
 		m_threadRunnedSmart->join();
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(m_threadRunnedSmart.get());
+#endif
 	return SUCCESS;
 }
 Ret Maintancer::Clear(void)
@@ -1528,6 +2202,8 @@ Ret Maintancer::Clear(void)
 }
 void Maintancer::MyTimeout(void)
 {
+	if(Global::GetState() >= STOP_GLOBALSTATE_BASEFRAMEWORK)
+		return;
 	//????? urc server have not report state
 	if (!UrcSingleton::Instance().GetRootFlag())
 	{
@@ -1551,12 +2227,15 @@ void Maintancer::MyTimeout(void)
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "SerializeToString error";
 		}
 		else
-		{
-			suloki::SulokiMessage req;
+		if (fabs(fBusy - m_busyDegree) > 0.0001f)
+		{//busy degree have changed
+			m_busyDegree = fBusy;
+			//
+			SulokiMessage req;
 			Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 			req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 			req.set_messageid(SULOKI_UPDATE_MESSAGEID_URC_PROTO);
-			req.set_messagetype(suloki::SulokiMessage::request);
+			req.set_messagetype(SulokiMessage::request);
 			req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 			req.set_urckey(strUrName);
 			req.set_urcval(strBody);
@@ -1564,8 +2243,15 @@ void Maintancer::MyTimeout(void)
 			req.set_attrib(0);
 			req.set_dir(true);
 			suloki::SulokiOperatorUrcMsgBody body;
+			;
 			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiOperatorUrcMsgBody>(req, body);
-			UrcSingleton::Instance().ReqresMsgToUrcserver(strUrName, req, 1000);
+			Ret ret = UrcSingleton::Instance().ReqresMsgToUrcserver(strUrName, req, 4000);
+			if(ret != SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "update state error, error code:" << ret;
+			}
+			if(Global::GetState() >= STOP_GLOBALSTATE_BASEFRAMEWORK)
+				return;
 		}
 	}
 	m_timerSmart->expires_from_now(std::chrono::milliseconds(5000));
@@ -1583,7 +2269,11 @@ void Maintancer::Run(void)
 AppStateMachine::AppStateMachine()
 {}
 AppStateMachine::~AppStateMachine()
-{}
+{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	DEL_MDEBUG(this)
+#endif
+}
 Ret AppStateMachine::Init(void)
 {
 	/*
@@ -1593,6 +2283,7 @@ Ret AppStateMachine::Init(void)
 		return FAIL;
 	}
 	*/
+#ifdef SULOKI_WINDOWS_OS_SULOKI
 	std::string strLogname;
 	//if(ConfigSingleton::Instance().GetConfig(SULOKI_LOGNAME_KEY_CONFIG_BASE, strLogname) != SUCCESS)
 	//	strLogname = "log";
@@ -1635,7 +2326,7 @@ Ret AppStateMachine::Init(void)
 	SetLogLevel(strLoglevel);
 	boost::log::add_common_attributes();
 	//std::cout << "log init" << std::endl;
-	//
+#endif
 	try{
 		ConfigSingleton::Instance();
 		/*

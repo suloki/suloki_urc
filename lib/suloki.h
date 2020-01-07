@@ -8,6 +8,7 @@
 //#define SULOKI_64_PLATFORM_SULOKI
 //test code
 //#define SULOKI_DEBUG_BASEFRAMEWORK
+//#define SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
 
 #include <stdio.h>
 #include <iostream>
@@ -116,6 +117,32 @@
 #define SULOKI_DECREMENT64_GLOBAL(pInt) __sync_fetch_and_sub(pInt, 1)-1
 #endif
 
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+void New_Mdebug(void* pTr, std::string str);
+void Del_Mdebug(void* pTr);
+void Print_Mdebug(void);
+#define NEW_MDEBUG(pTr, sTr) {std::stringstream strStream;strStream << __FILE__ << " " << __LINE__ << " " << __FUNCTION__ << "_" << sTr;New_Mdebug((void*)pTr, strStream.str());}
+#define DEL_MDEBUG(pTr) {Del_Mdebug((void*)pTr);}
+#endif
+
+class MySulokiUrcModuleInterface
+{
+public:
+	static void SetSulokiUrcModuleInterface(SulokiUrcModuleInterface* pSulokiUrcModuleInterface)
+	{
+		m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
+	}
+	static inline SulokiUrcModuleInterface* GetSulokiUrcModuleInterface(void)
+	{
+		return m_pSulokiUrcModuleInterface;
+	}
+private:
+	MySulokiUrcModuleInterface(MySulokiUrcModuleInterface& ref) {}
+	MySulokiUrcModuleInterface& operator=(MySulokiUrcModuleInterface& ref) { return *this; }
+protected:
+	static SulokiUrcModuleInterface* m_pSulokiUrcModuleInterface;
+};
+
 namespace Suloki
 {
 
@@ -163,6 +190,10 @@ const Ret URC_DECODEPROTO_ERRORCODE = 18;
 const Ret URC_ENCODEPROTO_ERRORCODE = 19;
 const Ret URC_DECODEBODYPROTO_ERRORCODE = 20;
 const Ret URC_ENCODEBODYPROTO_ERRORCODE = 21;
+const Ret URC_NOEVENT_ERRORCODE = 22;
+//about net
+const Ret NET_CREATECONNFAIL_ERRORCODE = 31;
+const Ret NET_EXCEPTION_ERRORCODE = 32;
 
 const Int MAXNUM_THREAD = 256;
 const Int MAXNUM_NETCONN = 10240;
@@ -237,6 +268,9 @@ public:
 				m_pInstance = new T();
 				if (m_pInstance == NULL)
 					throw std::bad_alloc();//std::exception();
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+				NEW_MDEBUG(m_pInstance, "");
+#endif
 			}
 		}
 		return *m_pInstance;
@@ -278,7 +312,12 @@ class Base
 {
 public:
 	Base(){}
-	virtual ~Base(){}
+	virtual ~Base()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 private:
 	Base(Base& ref){}
 	Base& operator=(Base& ref){return *this;}
@@ -322,7 +361,12 @@ public:
 	};
 public:
 	Config();
-	virtual ~Config(){}
+	virtual ~Config()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	virtual Ret ReadConfig(void);
 	Ret SetConfig(std::string key, std::string val);
 	Ret GetConfig(std::string key, std::string& val);
@@ -350,30 +394,30 @@ typedef Singleton<Config> ConfigSingleton;
 class SulokiProtoSwrap
 {
 public:
-	static int MakeBaseMessage(suloki::SulokiMessage& proto)
+	static int MakeBaseMessage(SulokiMessage& proto)
 	{
 		proto.set_protocolversion("2.0.0.0");
 		proto.set_businessid(SULOKI_SYSTEM_BISINESSID_PROTO);
 		proto.set_messageid(SULOKI_TEST_MESSAGEID_SYSTEM_PROTO);
-		proto.set_messagetype(suloki::SulokiMessage::notice);
+		proto.set_messagetype(SulokiMessage::notice);
 		proto.set_sequencenumber(0);
 		return SUCCESS;
 	}
-	static int MakeSimpleCopy(suloki::SulokiMessage& ori, suloki::SulokiMessage& back)
+	static int MakeSimpleCopy(SulokiMessage& ori, SulokiMessage& back)
 	{
 		back.set_protocolversion(ori.protocolversion());
 		back.set_businessid(ori.businessid());
 		back.set_messageid(ori.messageid());
-		back.set_messagetype(suloki::SulokiMessage::response);
+		back.set_messagetype(SulokiMessage::response);
 		back.set_sequencenumber(ori.sequencenumber());
 		return SUCCESS;
 	}
-	static int MakeResMessage(suloki::SulokiMessage& req, suloki::SulokiMessage& res)
+	static int MakeResMessage(SulokiMessage& req, SulokiMessage& res)
 	{
 		res.set_protocolversion(req.protocolversion());
 		res.set_businessid(req.businessid());
 		res.set_messageid(req.messageid());
-		res.set_messagetype(suloki::SulokiMessage::response);
+		res.set_messagetype(SulokiMessage::response);
 		res.set_sequencenumber(req.sequencenumber());
 		if (req.has_token())
 			res.set_token(req.token());
@@ -387,7 +431,7 @@ public:
 		return SUCCESS;
 	}
 	template <typename Tbody>
-	static int SetBody(suloki::SulokiMessage& proto, Tbody& body)
+	static int SetBody(SulokiMessage& proto, Tbody& body)
 	{
 		std::string strBody;
 		if (!body.SerializeToString(&strBody))
@@ -400,7 +444,7 @@ public:
 		return SUCCESS;
 	}
 	template <typename Tbody>
-	static int GetBody(suloki::SulokiMessage& proto, Tbody& body)
+	static int GetBody(SulokiMessage& proto, Tbody& body)
 	{
 		if (!proto.has_messagebody())
 		{
@@ -438,7 +482,7 @@ public:
 		return SUCCESS;
 	}
 	template <typename Tbody>
-	static int EncodeProtocol(suloki::SulokiMessage& proto, Tbody& body, std::string& strMsg)
+	static int EncodeProtocol(SulokiMessage& proto, Tbody& body, std::string& strMsg)
 	{
 		strMsg.clear();
 		if (!body.SerializeToString(&strMsg))
@@ -455,7 +499,7 @@ public:
 		}
 		return SUCCESS;
 	}
-	static int EncodeProtocol(suloki::SulokiMessage& proto, std::string& strMsg)
+	static int EncodeProtocol(SulokiMessage& proto, std::string& strMsg)
 	{
 		strMsg.clear();
 		if (!proto.SerializeToString(&strMsg))
@@ -466,7 +510,7 @@ public:
 		return SUCCESS;
 	}
 	template <typename Tbody>
-	static int DecodeProtocol(const char* pMsg, int msgLen, suloki::SulokiMessage& proto, Tbody& body)
+	static int DecodeProtocol(const char* pMsg, int msgLen, SulokiMessage& proto, Tbody& body)
 	{
 		if (pMsg == NULL || msgLen <= 0)
 			return FAIL;
@@ -490,7 +534,7 @@ public:
 		}
 		return SUCCESS;
 	}
-	static int DecodeProtocol(const char* pMsg, int msgLen, suloki::SulokiMessage& proto)
+	static int DecodeProtocol(const char* pMsg, int msgLen, SulokiMessage& proto)
 	{
 		if (pMsg == NULL || msgLen <= 0)
 			return URC_DECODEPROTO_ERRORCODE;
@@ -502,11 +546,14 @@ public:
 		}
 		return SUCCESS;
 	}
-	static int DecodeProtocol(const char* pMsg, int msgLen, std::auto_ptr<suloki::SulokiMessage>& protoSmart)
+	static int DecodeProtocol(const char* pMsg, int msgLen, std::auto_ptr<SulokiMessage>& protoSmart)
 	{
-		protoSmart = std::auto_ptr<suloki::SulokiMessage>(new suloki::SulokiMessage);
+		protoSmart = std::auto_ptr<SulokiMessage>(new SulokiMessage);
 		if (protoSmart.get() == NULL)
 			return NOMEMORY_ERRORCODE;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(protoSmart.get(), "");
+#endif
 		if (pMsg == NULL || msgLen <= 0)
 			return URC_DECODEPROTO_ERRORCODE;
 		protoSmart->Clear();
@@ -529,6 +576,9 @@ public:
 		m_pQueue = new boost::lockfree::queue<T*, boost::lockfree::fixed_sized<false> >(0);
 		if(m_pQueue == NULL)
 			throw Exception("new boost::lockfree::queue exception");
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(m_pQueue, "");
+#endif
 #ifdef SULOKI_DEBUG_BASEFRAMEWORK
 		if (m_pQueue->is_lock_free())
 			std::cout << "lock free queue" << std::endl;
@@ -538,11 +588,17 @@ public:
 	virtual ~Queue()
 	{
 		Clear();
-		if(m_pQueue == NULL)
+		if(m_pQueue != NULL)
 		{
 			delete m_pQueue;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(m_pQueue)
+#endif
 			m_pQueue = NULL;
 		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
 	}
 	inline Ret Push(std::auto_ptr<T> tSmart)// throw()
 	{
@@ -577,6 +633,10 @@ public:
 			std::auto_ptr<T> tSmart = Pop();
 			if (tSmart.get() == NULL)
 				break;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(tSmart.get());
+			tSmart.reset(NULL);
+#endif
 		}
 	}
 	inline Int GetSize(void)
@@ -599,7 +659,7 @@ public:
 	IdManager(Int maxId, bool bCanfree)throw();
 	virtual ~IdManager();
 	Int GetFreeId(void);
-	Ret FreeId(Int id);
+	Ret FreeId(Int id, std::string strMdebug = "");
 private:
 	IdManager(IdManager& ref) {}
 	IdManager& operator=(IdManager& ref) { return *this; }
@@ -676,7 +736,12 @@ protected:
 	typedef Loki::Functor<Int, TYPELIST_2(Tprotocol&, Tpara&)> HandlerFunctorSimple;
 public:
 	Dispatcher(){}
-	virtual ~Dispatcher(){}
+	virtual ~Dispatcher()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	Ret Handle(Tprotocol& protocolReq, Tpara& paraIn, Tprotocol& protocolRes, Tpara& paraOut)
 	{
 		std::string strKey = CalKey(protocolReq);
@@ -721,8 +786,8 @@ public:
 	virtual ~EventManager();
 	void FreeEvent(Int id);
 	Int GetFreeEvent(void);
-	Ret Wait(Int id, std::string strUrcKey, Int timeout, std::auto_ptr<suloki::SulokiMessage>& msgSmart);
-	Ret Notify(Int id, std::auto_ptr<suloki::SulokiMessage> msgSmart);
+	Ret Wait(Int id, std::string strUrcKey, Int timeout, std::auto_ptr<SulokiMessage>& msgSmart);
+	Ret Notify(Int id, std::auto_ptr<SulokiMessage> msgSmart);
 	Ret AsyncTimer(Int timeout, std::string strUrcKey);
 protected:
 	void MyAsyncTimeout(Uint timerPtr, std::string strUrcKey);
@@ -737,7 +802,7 @@ protected:
 	boost::mutex m_mutex[MAXNUM_THREAD+2];
 	bool m_ready[MAXNUM_THREAD+2];
 	bool m_bTimeout[MAXNUM_THREAD + 2];
-	std::auto_ptr<suloki::SulokiMessage> m_msgSmart[MAXNUM_THREAD + 2];
+	std::auto_ptr<SulokiMessage> m_msgSmart[MAXNUM_THREAD + 2];
 	std::auto_ptr<IdManager> m_idManagerSmart;
 	//
 	boost::asio::io_service m_ioService;
@@ -765,11 +830,20 @@ public:
 		//this conn obj ur name
 		std::string m_strName;
 		std::string m_strServiceStateUrName;
+		std::set<std::string> m_subSet;
 	};
 public:
 	static boost::shared_ptr<UrcTcpConnection> Create(boost::asio::io_service& io_service, bool bServer = true)
 	{
 		boost::shared_ptr<UrcTcpConnection> connSmartPtr(new UrcTcpConnection(io_service));
+		if (connSmartPtr.get() == NULL)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "no memory";
+			return connSmartPtr;
+		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(connSmartPtr.get(), "");
+#endif
 		connSmartPtr->m_bServer = bServer;
 		return connSmartPtr;
 	}
@@ -786,6 +860,9 @@ public:
 	{
 #ifdef SULOKI_DEBUG_BASEFRAMEWORK
 		std::cout << "~UrcTcpConnection, m_idTested:" << m_idTested << std::endl;
+#endif
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
 #endif
 	}
 	boost::asio::ip::tcp::socket& GetSocketRef()
@@ -804,7 +881,7 @@ public:
 	{
 		m_socket.cancel();
 	}
-	Ret WriteAsync(suloki::SulokiMessage& msg)//const char* pData, int dataLen)
+	Ret WriteAsync(SulokiMessage& msg)//const char* pData, int dataLen)
 	{
 		if (m_bServer)
 		{//pop router
@@ -973,13 +1050,17 @@ protected:
 	void Accept()
 	{
 		boost::shared_ptr<UrcTcpConnection> connSmartPtr = UrcTcpConnection::Create(m_acceptorSmart->get_io_service());
+		if (connSmartPtr.get() == NULL)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "UrcTcpConnection::Create return empty UrcTcpConnection obj";
+		}
 		m_acceptorSmart->async_accept(connSmartPtr->GetSocketRef(),
 			boost::bind(&UrcTcpServer::handle_accept, this, connSmartPtr, boost::asio::placeholders::error));
 	}
 	virtual void HandleAccept(std::string strConnname, boost::shared_ptr<UrcTcpConnection> connSmartPtr);
 	void handle_accept(boost::shared_ptr<UrcTcpConnection> connSmartPtr, const boost::system::error_code& error)
 	{
-		if (!error)
+		if (!error && connSmartPtr.get() != NULL)
 		{
 			Int id = m_idManager.GetFreeId();
 			if(id >= 0)
@@ -1030,8 +1111,11 @@ const std::string SULOKI_REMOTED_RESOURCE_URC_BASE = "/remoted/";//remoted urc s
 const std::string SULOKI_URCSYS_RESOURCE_URC_BASE = "/urcsys/";//this is urc reserved type,local
 //
 const std::string SULOKI_SERVICES_PATHNAME_URC_BASE = "services/";
+//const std::string SULOKI_PROXYS_PATHNAME_URC_BASE = "proxys";
 //
 const std::string SULOKI_SQL_NAME_URC_BASE = "/remoted/sqldata";
+//
+const std::string SULOKI_STR_DEVIDED_SUB_URC_BASE = "_";
 //urc type
 const Int SULOKI_SQLDATA_TYPE_URC_BASE = 1;
 const Int SULOKI_NOSQLDATA_TYPE_URC_BASE = 2;
@@ -1040,7 +1124,7 @@ const Int SULOKI_DIR_TYPE_URC_BASE = 4;
 const Int SULOKI_OBJECT_TYPE_URC_BASE = 5;
 const Int SULOKI_EVENT_TYPE_URC_BASE = 6;
 //urc attrib
-//const Int SULOKI_CACHE_GLOBAL_ATTR_URC_BASE = 1;//this bit is 0 mean not cache
+const Int SULOKI_PROXY_GLOBAL_ATTR_URC_BASE = 1;//this bit is 0 mean not cache
 //SULOKI_MSGQUEUE_TYPE_URC_BASE attribute
 const Int SULOKI_EXCLUSIVE_MSGQUEUE_ATTR_URC_BASE = 2;//this bit is 0 mean shared
 const Int SULOKI_SERIAL_MSGQUEUE_ATTR_URC_BASE = 4;//this bit is 0 mean parallel when SULOKI_EXCLUSIVE_MSGQUEUE_ATTR_URC_BASE have setted
@@ -1121,6 +1205,9 @@ public:
 #else
 			dlclose(m_hinstLib);
 #endif
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
 	}
 	//
 	virtual SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig)
@@ -1135,13 +1222,13 @@ public:
 			return INVALIDPARA_ERRORCODE;
 		return (m_MyStart)();
 	}
-	virtual SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg)
+	virtual SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg)
 	{
 		if (!m_bInit)
 			return INVALIDPARA_ERRORCODE;
 		return (m_MyTestValid)(msg);
 	}
-	virtual SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context)
+	virtual SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context)
 	{
 		if (!m_bInit)
 			return INVALIDPARA_ERRORCODE;
@@ -1183,8 +1270,8 @@ protected:
 class Urc : public SulokiUrcModuleInterface
 {
 public:
-	typedef Loki::Functor<void, TYPELIST_3(suloki::SulokiContext*, std::auto_ptr<suloki::SulokiMessage>, suloki::SulokiContext&)> AsyncFunc;
-	typedef Loki::Functor<void, TYPELIST_2(std::auto_ptr<suloki::SulokiMessage>, suloki::SulokiContext&)> AsyncNewFunc;
+	typedef Loki::Functor<void, TYPELIST_3(SulokiContext*, std::auto_ptr<SulokiMessage>, SulokiContext&)> AsyncFunc;
+	typedef Loki::Functor<void, TYPELIST_2(std::auto_ptr<SulokiMessage>, SulokiContext&)> AsyncNewFunc;
 private:
 	enum{MAXLEN_NAME=64};
 	class Module : public BaseRoot
@@ -1196,17 +1283,51 @@ private:
 			m_handlerSmartPtr = handlerSmartPtr;
 			m_config = config;
 		}
+		virtual ~Module()
+		{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(this)
+#endif
+		}
 		std::string m_name;
 		boost::shared_ptr< SulokiHandleModuleInterface > m_handlerSmartPtr;
 		std::string m_config;
+	};
+	class SubProxy : public BaseRoot
+	{
+	public:
+		SubProxy(std::string strUrName, std::string strSubName, SulokiAsyncCb asyncCb, std::auto_ptr<SulokiContext> contextOriSmart)
+		{
+			m_strUrName = strUrName;
+			m_strSubName = strSubName;
+			m_asyncCb = asyncCb;
+			m_contextOriSmart = contextOriSmart;
+		}
+		virtual ~SubProxy()
+		{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(this)
+#endif
+		}
+		std::string m_strUrName;
+		std::string m_strSubName;
+		SulokiAsyncCb m_asyncCb;
+		std::auto_ptr<SulokiContext> m_contextOriSmart;
 	};
 	class InfoSubscribed
 	{
 	public:
 		InfoSubscribed():m_ref(0)
 		{}
-		AsyncNewFunc m_cb;
-		Queue<suloki::SulokiMessage> m_queue;
+		virtual ~InfoSubscribed()
+		{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(this)
+#endif
+		}
+		AsyncFunc m_cb;
+		std::auto_ptr<SulokiContext> m_contextOriSmart;
+		Queue<SulokiMessage> m_queue;
 		Int m_ref;
 	};
 	class Swaper
@@ -1221,6 +1342,9 @@ private:
 				InfoSubscribed* pInfoSubscribed = (InfoSubscribed*)(iter->second);
 				delete pInfoSubscribed;
 			}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(this)
+#endif
 		}
 		Int m_type;
 		Int m_attrib;
@@ -1233,7 +1357,11 @@ private:
 		explicit SwaperDir(Int type):Swaper(type, 0)
 		{}
 		virtual ~SwaperDir()
-		{}
+		{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(this)
+#endif
+		}
 		std::string m_strIndex;
 	};
 	template <typename T>
@@ -1243,7 +1371,11 @@ private:
 		SwaperObject(Int type, Int attrib, bool bDir, T val):Swaper(type, attrib)
 		{m_val = val;m_bDir=bDir;}
 		virtual ~SwaperObject()
-		{}
+		{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			DEL_MDEBUG(this)
+#endif
+		}
 		bool m_bDir;
 		T m_val;
 	};
@@ -1263,6 +1395,9 @@ public:
 			//????? free
 			;
 		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
 	}
 public://statemachine interface
 	virtual Ret Init(void);
@@ -1272,18 +1407,23 @@ public://statemachine interface
 public://
 	Ret ConnAndReg(std::string strUrName, std::string ip, Uint port);
 public://SulokiUrcModuleInterface
-	virtual SulokiRet ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_INOUT suloki::SulokiMessage& req, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart = std::auto_ptr<suloki::SulokiContext>(NULL));
-	virtual SulokiRet Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_IN suloki::SulokiMessage& notice);
-	virtual SulokiRet PostToMainModule(SULOKI_IN std::auto_ptr<suloki::SulokiMessage> msgSmart);
+	virtual SulokiRet ReqRes(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_INOUT SulokiMessage& req, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL));
+	virtual SulokiRet Notify(SULOKI_IN std::string strGroupName, SULOKI_IN std::string strServiceName, SULOKI_IN SulokiMessage& notice);
+	virtual SulokiRet PostToMainModule(SULOKI_IN std::auto_ptr<SulokiMessage> msgSmart);
 	virtual SulokiRet AddObject(SULOKI_IN std::string strUrName, SULOKI_IN boost::shared_ptr<BaseRoot>& baseSmartPtr);
 	virtual SulokiRet DelObject(SULOKI_IN std::string strUrName, SULOKI_OUT boost::shared_ptr<BaseRoot>& baseSmartPtr);
 	virtual SulokiRet GetObject(SULOKI_IN std::string strUrName, SULOKI_OUT boost::shared_ptr<BaseRoot>& baseSmartPtr);
-	virtual SulokiRet GetSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT suloki::SulokiMessage& msg, SULOKI_IN long timeout, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart = std::auto_ptr<suloki::SulokiContext>(NULL));
-	virtual SulokiRet AddNoSqlData(SULOKI_IN std::string strUrName, SULOKI_IN std::string& data, SULOKI_IN bool bDir = false, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart = std::auto_ptr<suloki::SulokiContext>(NULL));
-	virtual SulokiRet DelNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart = std::auto_ptr<suloki::SulokiContext>(NULL));
-	virtual SulokiRet UpdateNoSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT std::string& data, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart = std::auto_ptr<suloki::SulokiContext>(NULL));
-	virtual SulokiRet GetNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<suloki::SulokiContext> contextOriSmart = std::auto_ptr<suloki::SulokiContext>(NULL));
+	virtual SulokiRet GetSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT SulokiMessage& msg, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL));
+	virtual SulokiRet AddNoSqlData(SULOKI_IN std::string strUrName, SULOKI_IN std::string& data, SULOKI_IN bool bDir = false, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL), bool bProxy = false);
+	virtual SulokiRet DelNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL), bool bProxy = false);
+	virtual SulokiRet UpdateNoSqlData(SULOKI_IN std::string strUrName, SULOKI_INOUT std::string& data, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL));
+	virtual SulokiRet GetNoSqlData(SULOKI_IN std::string strUrName, SULOKI_OUT std::string& data, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL), bool bProxy = false);
 	virtual SulokiRet GetUrDirectory(SULOKI_IN std::string strUrPath, SULOKI_OUT std::vector<std::string>& nameVector);
+	virtual SulokiRet Subscribe(SULOKI_IN std::string strUrName, SULOKI_IN std::string strSubName, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL));
+	virtual SulokiRet Unsubscribe(SULOKI_IN std::string strUrName, SULOKI_IN std::string strSubName, SULOKI_IN long timeout = 0, SULOKI_IN SulokiAsyncCb asyncCb = NULL, SULOKI_IN std::auto_ptr<SulokiContext> contextOriSmart = std::auto_ptr<SulokiContext>(NULL));
+	//memory debug interface
+	virtual void NewMdebug(void* pTr, std::string str);
+	virtual void DelMdebug(void* pTr);
 protected:
 	Ret SetThreadNum(Int threadNum)
 	{
@@ -1310,9 +1450,9 @@ public:
 	}
 public://urc interface
 	//advanced interface
-	Ret ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg, Int timeout, std::string strObjName = "");
-	Ret ReqresMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg, Int timeout, AsyncNewFunc asyncCb, std::string strObjName = "");
-	Ret NotifyMsgToUrcserver(std::string strUrName, suloki::SulokiMessage& msg, std::string strObjName = "");
+	Ret ReqresMsgToUrcserver(std::string strUrName, SulokiMessage& msg, Int timeout, std::string strObjName = "");
+	Ret ReqresMsgToUrcserver(std::string strUrName, SulokiMessage& msg, Int timeout, AsyncNewFunc asyncCb, std::string strObjName = "");
+	Ret NotifyMsgToUrcserver(std::string strUrName, SulokiMessage& msg, std::string strObjName = "");
 	//sync
 	template <typename T>
 	Ret AddUr(std::string strUrName, T& tVal, Int type, Int attrib = 0, bool bDir = false, Int timeout = 0)
@@ -1335,9 +1475,11 @@ public://urc interface
 	}
 protected:
 	//for sync call
-	void FuncRes(suloki::SulokiContext* pContextOri, std::auto_ptr<suloki::SulokiMessage> msgSmart, suloki::SulokiContext& contextNew)
+	void FuncRes(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew)
 	{
-		std::auto_ptr<suloki::SulokiContext> contextSmart(pContextOri);
+		std::auto_ptr<SulokiContext> contextSmart(pContextOri);
+		if(Suloki::Global::GetState() >= Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK)
+			return;
 		if (!contextSmart->has_id())
 		{
 			SULOKI_INFO_LOG_BASEFRAMEWORK << "contextSmart has not id field error";
@@ -1345,10 +1487,10 @@ protected:
 		}
 		EventManagerSingleton::Instance().Notify(contextSmart->id(), msgSmart);
 	}
-	//void FuncRes(Int eventId, Uint msgPtr, bool bTimeout)//std::auto_ptr<suloki::SulokiMessage> msgSmart)
+	//void FuncRes(Int eventId, Uint msgPtr, bool bTimeout)//std::auto_ptr<SulokiMessage> msgSmart)
 	//{
-	//	suloki::SulokiMessage* pTprotocol = (suloki::SulokiMessage*)msgPtr;
-	//	std::auto_ptr<suloki::SulokiMessage> msgSmart(pTprotocol);
+	//	SulokiMessage* pTprotocol = (SulokiMessage*)msgPtr;
+	//	std::auto_ptr<SulokiMessage> msgSmart(pTprotocol);
 	//	EventManagerSingleton::Instance().Notify(eventId, msgSmart);
 	//}
 protected:
@@ -1381,11 +1523,11 @@ protected:
 	}
 	//
 	template <typename T>
-	Ret AddUrIn(std::string strUrName, T& tVal, Int type, Int attrib, bool bDir, Loki::Type2Type< Queue<suloki::SulokiMessage> >)
+	Ret AddUrIn(std::string strUrName, T& tVal, Int type, Int attrib, bool bDir, Loki::Type2Type< Queue<SulokiMessage> >)
 	{
 		if(!(type == SULOKI_MSGQUEUE_TYPE_URC_BASE))
 			return INVALIDPARA_ERRORCODE;
-		//boost::shared_ptr< Queue<suloki::SulokiMessage> > queueSmartPtr(new Queue<suloki::SulokiMessage>);
+		//boost::shared_ptr< Queue<SulokiMessage> > queueSmartPtr(new Queue<SulokiMessage>);
 		//if(queueSmartPtr.get() == NULL)
 		//	return NOMEMORY;
 		return AddUrInIn(strUrName, tVal, type, attrib, bDir);
@@ -1397,6 +1539,9 @@ protected:
 		std::auto_ptr< SwaperObject<T> > objSmart(new SwaperObject<T>(type, attrib, bDir, tVal));
 		if(objSmart.get() == NULL)
 			return NOMEMORY_ERRORCODE;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(objSmart.get(), strUrName);
+#endif
 		std::auto_ptr< SwaperDir > objDirSmart;
 		std::string strPath;
 		char cName[MAXLEN_NAME+2];
@@ -1406,6 +1551,11 @@ protected:
 			strPath = strUrName.substr(0, pos+1);
 			//std::cout << strPath << std::endl;
 			objDirSmart = std::auto_ptr< SwaperDir >(new SwaperDir(SULOKI_DIR_TYPE_URC_BASE));
+			if (objDirSmart.get() == NULL)
+				return NOMEMORY_ERRORCODE;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			NEW_MDEBUG(objDirSmart.get(), "");
+#endif
 			memset(cName, 0, MAXLEN_NAME+2);
 			//std::string strLastName = strUrName.substr(pos+1);
 			//std::cout << strLastName << std::endl;
@@ -1448,11 +1598,6 @@ public:
 			return INVALIDPARA_ERRORCODE;
 		if (strUrName.find(SULOKI_LOCAL_RESOURCE_URC_BASE) == 0)
 		{
-			//strUrName = strUrName.substr(SULOKI_LOCAL_RESOURCE_URC_BASE.length()-1);
-			//WriteLock lock(m_rwLock);
-			//std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
-			//if(iter == m_urcMap.end())
-			//	return URC_UNEXISTED;
 			return DelUrIn(strUrName, tVal, Loki::Type2Type<T>());
 		}
 		else
@@ -1472,11 +1617,6 @@ protected:
 			return INVALIDPARA_ERRORCODE;
 		if (strUrName.find(SULOKI_URCSYS_RESOURCE_URC_BASE) == 0)
 		{
-			//strUrName = strUrName.substr(SULOKI_LOCAL_RESOURCE_URC_BASE.length()-1);
-			//WriteLock lock(m_rwLock);
-			//std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
-			//if (iter == m_urcMap.end())
-			//	return URC_UNEXISTED;
 			return DelUrIn(strUrName, tVal, Loki::Type2Type<T>());
 		}
 		return URC_INVALIDPATH_ERRORCODE;
@@ -1490,9 +1630,9 @@ protected:
 		if (iter == m_urcMap.end())
 			return URC_UNEXISTED_ERRORCODE;
 		Int type = ((Swaper*)(iter->second))->m_type;
-		if(!(type == SULOKI_NOSQLDATA_TYPE_URC_BASE))
+		if (!(type == SULOKI_NOSQLDATA_TYPE_URC_BASE))
 			return INVALIDPARA_ERRORCODE;
-		return DelUrInIn(iter, strUrName, tVal, type);
+		return DelUrInIn(iter, strUrName, tVal, type, m_urcMap);
 	}
 	template <typename T, typename Tptr>
 	Ret DelUrIn(std::string strUrName, T& tVal, Loki::Type2Type< boost::shared_ptr<Tptr> >)
@@ -1502,9 +1642,9 @@ protected:
 		if (iter == m_urcMap.end())
 			return URC_UNEXISTED_ERRORCODE;
 		Int type = ((Swaper*)(iter->second))->m_type;
-		if(!(type == SULOKI_OBJECT_TYPE_URC_BASE))
+		if (!(type == SULOKI_OBJECT_TYPE_URC_BASE))
 			return INVALIDPARA_ERRORCODE;
-		return DelUrInIn(iter, strUrName, tVal, type);
+		return DelUrInIn(iter, strUrName, tVal, type, m_urcMap);
 	}
 	template <typename T>//, typename Tpcb>
 	Ret DelUrIn(std::string strUrName, T& tVal, Loki::Type2Type< AsyncNewFunc >)
@@ -1514,13 +1654,13 @@ protected:
 		if (iter == m_urcMap.end())
 			return URC_UNEXISTED_ERRORCODE;
 		Int type = ((Swaper*)(iter->second))->m_type;
-		if(!(type == SULOKI_EVENT_TYPE_URC_BASE))
+		if (!(type == SULOKI_EVENT_TYPE_URC_BASE))
 			return INVALIDPARA_ERRORCODE;
-		return DelUrInIn(iter, strUrName, tVal, type);
+		return DelUrInIn(iter, strUrName, tVal, type, m_urcMap);
 	}
 	//
 	template <typename T>
-	Ret DelUrIn(std::string strUrName, T& tVal, Loki::Type2Type< Queue<suloki::SulokiMessage> >)
+	Ret DelUrIn(std::string strUrName, T& tVal, Loki::Type2Type< Queue<SulokiMessage> >)
 	{
 		//if(!(type == SULOKI_MSGQUEUE_TYPE_URC_BASE))
 		//	return INVALIDPARA;
@@ -1532,22 +1672,22 @@ protected:
 		Int type = ((Swaper*)(iter->second))->m_type;
 		if (!(type == SULOKI_MSGQUEUE_TYPE_URC_BASE))
 			return INVALIDPARA_ERRORCODE;
-		return DelUrInIn(iter, strUrName, tVal, type);
+		return DelUrInIn(iter, strUrName, tVal, type, m_urcMap);
 	}
 	//
 	template <typename T>
-	Ret DelUrInIn(std::map<std::string, void*>::iterator iter, std::string strUrName, T& tVal, Int type)
+	Ret DelUrInIn(std::map<std::string, void*>::iterator iter, std::string strUrName, T& tVal, Int type, std::map<std::string, void*>& urcMap)
 	{
 		std::auto_ptr< SwaperObject<T> > objSmart((SwaperObject<T>*)(iter->second));
 		tVal = objSmart->m_val;
-		m_urcMap.erase(iter);
+		urcMap.erase(iter);
 		if(objSmart->m_bDir)
 		{
 			std::string strPath;
 			size_t pos = strUrName.rfind('/');
 			strPath = strUrName.substr(0, pos+1);
-			std::map<std::string, void*>::iterator iter = m_urcMap.find(strPath);
-			if(iter != m_urcMap.end())
+			std::map<std::string, void*>::iterator iter = urcMap.find(strPath);
+			if (iter != urcMap.end())
 			{
 				std::string& strIndex = ((SwaperDir*)(iter->second))->m_strIndex;
 				size_t pos = strIndex.find(strUrName);
@@ -1558,7 +1698,7 @@ protected:
 					{
 						std::auto_ptr< SwaperDir > objDirSmart((SwaperDir*)(iter->second));
 						//tVal = objSmart->m_val;
-						m_urcMap.erase(iter);
+						urcMap.erase(iter);
 					}
 				}
 			}
@@ -1567,7 +1707,7 @@ protected:
 	}
 public:
 	template <typename T>
-	Ret UpdateUr(std::string strUrName, T& tVal, T& tValOld)
+	Ret UpdateUr(std::string strUrName, T& tVal, T& tValOld, Int& typeOld)
 	{
 		if(!(strUrName.length() <= MAXLEN_NAME))
 			return URC_NAMETOOLONG_ERRORCODE;
@@ -1575,12 +1715,7 @@ public:
 			return INVALIDPARA_ERRORCODE;
 		if(strUrName.find(SULOKI_LOCAL_RESOURCE_URC_BASE) == 0)
 		{
-			//strUrName = strUrName.substr(SULOKI_LOCAL_RESOURCE_URC_BASE.length()-1);
-			//WriteLock lock(m_rwLock);
-			//std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
-			//if(iter == m_urcMap.end())
-			//	return URC_UNEXISTED;
-			return UpdateUrIn(strUrName, tVal, tValOld, Loki::Type2Type<T>());
+			return UpdateUrIn(strUrName, tVal, tValOld, typeOld, Loki::Type2Type<T>());
 		}
 		else
 		if (strUrName.find(SULOKI_REMOTED_RESOURCE_URC_BASE) == 0)
@@ -1591,13 +1726,14 @@ public:
 	}
 protected:
 	template <typename T>
-	Ret UpdateUrIn(std::string strUrName, T& tVal, T& tValOld, Loki::Type2Type< std::string >)
+	Ret UpdateUrIn(std::string strUrName, T& tVal, T& tValOld, Int& typeOld, Loki::Type2Type< std::string >)
 	{
 		WriteLock lock(m_rwLock);
 		std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
 		if (iter == m_urcMap.end())
 			return URC_UNEXISTED_ERRORCODE;
 		Int type = ((Swaper*)(iter->second))->m_type;
+		typeOld = type;
 		if(!(type == SULOKI_NOSQLDATA_TYPE_URC_BASE))
 			return INVALIDPARA_ERRORCODE;
 		return UpdateUrInIn(iter, strUrName, tVal, tValOld, type);
@@ -1618,22 +1754,6 @@ public:
 			return URC_NAMETOOLONG_ERRORCODE;
 		if(!(strUrName.length() > 0 && strUrName.length() <= MAXLEN_NAME))
 			return INVALIDPARA_ERRORCODE;
-		//if(strUrName.find(SULOKI_LOCAL_RESOURCE_URC_BASE) == 0)
-		//{
-			//strUrName = strUrName.substr(SULOKI_LOCAL_RESOURCE_URC_BASE.length()-1);
-			/*ReadLock lock(m_rwLock);
-			std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
-			if(iter == m_urcMap.end())
-				return URC_UNEXISTED;*/
-			//return GetUrIn(iter, strUrName, tVal, ((Swaper*)(iter->second))->m_type, Loki::Type2Type<T>());
-		//}
-		//else
-		//if (strUrName == SULOKI_SQL_NAME_URC_BASE)
-		//{
-			//strUrName = strUrName.substr(SULOKI_REMOTED_RESOURCE_URC_BASE.length()-1);
-		//	return GetUrIn(strUrName, tVal, timeout, asyncCb, Loki::Type2Type<T>());
-		//}
-		//return URC_INVALIDPATH;
 		return GetUrIn(strUrName, tVal, timeout, Loki::Type2Type<T>());
 	}
 	template <typename T>
@@ -1655,19 +1775,13 @@ protected:
 			return INVALIDPARA_ERRORCODE;
 		if (strUrName.find(SULOKI_URCSYS_RESOURCE_URC_BASE) == 0)
 		{
-			//strUrName = strUrName.substr(SULOKI_LOCAL_RESOURCE_URC_BASE.length()-1);
-			//ReadLock lock(m_rwLock);
-			//std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
-			//if (iter == m_urcMap.end())
-			//	return URC_UNEXISTED;
-			//return GetUrIn(iter, strUrName, tVal, ((Swaper*)(iter->second))->m_type, Loki::Type2Type<T>());
 			return GetUrIn(strUrName, tVal, 0, Loki::Type2Type<T>());
 		}
 		return URC_INVALIDPATH_ERRORCODE;
 	}
 protected:
 	template <typename T>
-	Ret GetUrIn(std::string strUrName, T& tVal, Int timeout, Loki::Type2Type< suloki::SulokiMessage >)
+	Ret GetUrIn(std::string strUrName, T& tVal, Int timeout, Loki::Type2Type< SulokiMessage >)
 	{
 		if (strUrName != SULOKI_SQL_NAME_URC_BASE)
 			return INVALIDPARA_ERRORCODE;
@@ -1716,16 +1830,20 @@ protected:
 			else
 				strStream << SULOKI_URCSYS_RESOURCE_URC_BASE << "response/" << tVal.businessid() << "_" << tVal.messageid() << "_" << tVal.sequencenumber();
 			//boost::function<void(Int, Uint, bool)> func = boost::bind(&Urc::FuncRes, this, id, _1, _1);
-			//suloki::SulokiContext context;
-			std::auto_ptr<suloki::SulokiContext> contextSmart(new suloki::SulokiContext());
+			//SulokiContext context;
+			std::auto_ptr<SulokiContext> contextSmart(new SulokiContext());
 			if (contextSmart.get() == NULL)
 				return FAIL;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			NEW_MDEBUG(contextSmart.get(), "");
+#endif
 			//context.set_id(id);
 			contextSmart->set_id(id);
-			suloki::SulokiMessage* pMsgBack = contextSmart->mutable_msgori();
-			if (pMsgBack == NULL)
-				return FAIL;
-			SulokiProtoSwrap::MakeSimpleCopy(tVal, *pMsgBack);
+			//?????
+			//SulokiMessage* pMsgBack = contextSmart->mutable_msgori();
+			//if (pMsgBack == NULL)
+			//	return FAIL;
+			//SulokiProtoSwrap::MakeSimpleCopy(tVal, *pMsgBack);
 			AsyncNewFunc func(BindFirst(AsyncFunc(this, &Urc::FuncRes), contextSmart.release()));
 			if (AddUrIn(strStream.str(), func, SULOKI_EVENT_TYPE_URC_BASE, 0, false, -1, Loki::Type2Type<AsyncNewFunc>()) != SUCCESS)
 			{
@@ -1735,7 +1853,7 @@ protected:
 			}
 			//
 			connSmartPtr->WriteAsync(strMsg.c_str(), strMsg.length());
-			std::auto_ptr<suloki::SulokiMessage> resSmart;
+			std::auto_ptr<SulokiMessage> resSmart;
 			if (EventManagerSingleton::Instance().Wait(id, strStream.str(), timeout, resSmart) != SUCCESS)
 				return TIMEOUT_ERRORCODE;
 			tVal = *resSmart;
@@ -1746,7 +1864,7 @@ protected:
 		return URC_INVALIDPATH_ERRORCODE;
 	}
 	template <typename T>
-	Ret GetUrIn(std::string strUrName, T& tVal, Int timeout, AsyncNewFunc asyncCb, Loki::Type2Type< suloki::SulokiMessage >)
+	Ret GetUrIn(std::string strUrName, T& tVal, Int timeout, AsyncNewFunc asyncCb, Loki::Type2Type< SulokiMessage >)
 	{
 		if (strUrName != SULOKI_SQL_NAME_URC_BASE)
 			return INVALIDPARA_ERRORCODE;
@@ -1861,17 +1979,20 @@ protected:
 	//	tVal = ((SwaperObject<T>*)(iter->second))->m_val;
 	//	return SUCCESS;
 	//}
+protected:
+	//for sub call
+	static void FuncSub(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew);
+	static void FuncSubLocal(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew);
 public:
-	/*
-	Ret SubscribeUr(std::string strUrName, std::string strModuleName, AsyncNewFunc func)
+	Ret SubscribeUr(std::string strUrName, std::string strSubName, AsyncFunc func, std::auto_ptr<SulokiContext> contextOriSmart)
 	{
 		if(!(strUrName.length() <= MAXLEN_NAME))
 			return URC_NAMETOOLONG_ERRORCODE;
 		if(!(strUrName.length() > 0 && strUrName.length() <= MAXLEN_NAME))
 			return INVALIDPARA_ERRORCODE;
-		if(!(strModuleName.length() <= MAXLEN_NAME))
+		if (!(strSubName.length() <= MAXLEN_NAME))
 			return URC_NAMETOOLONG_ERRORCODE;
-		if(!(strModuleName.length() > 0 && strModuleName.length() <= MAXLEN_NAME))
+		if (!(strSubName.length() > 0 && strSubName.length() <= MAXLEN_NAME))
 			return INVALIDPARA_ERRORCODE;
 		//ReadLock lock(m_rwLock);
 		WriteLock lock(m_rwLock);
@@ -1879,27 +2000,31 @@ public:
 		if(iter == m_urcMap.end())
 			return URC_UNEXISTED_ERRORCODE;
 		Swaper* pSwaper = (Swaper*)(iter->second);
-		if(!(pSwaper->m_type == SULOKI_MSGQUEUE_TYPE_URC_BASE))
+		if (!(pSwaper->m_type == SULOKI_SQLDATA_TYPE_URC_BASE || pSwaper->m_type == SULOKI_NOSQLDATA_TYPE_URC_BASE))
 			return URC_CANNOTSUB_ERRORCODE;
-		std::map< std::string, InfoSubscribed* >::iterator iterSub = pSwaper->m_subscriberMap.find(strModuleName);
+		std::map< std::string, InfoSubscribed* >::iterator iterSub = pSwaper->m_subscriberMap.find(strSubName);
 		if(iterSub != pSwaper->m_subscriberMap.end())
 			return URC_SUBEXISTED_ERRORCODE;
 		std::auto_ptr<InfoSubscribed> subSmart(new InfoSubscribed());
 		if (subSmart.get() == NULL)
 			return NOMEMORY_ERRORCODE;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(subSmart.get(), "");
+#endif
 		subSmart->m_cb = func;
-		pSwaper->m_subscriberMap.insert(std::pair< std::string, InfoSubscribed*  >(strModuleName, subSmart.release()));
+		subSmart->m_contextOriSmart = contextOriSmart;
+		pSwaper->m_subscriberMap.insert(std::pair< std::string, InfoSubscribed*  >(strSubName, subSmart.release()));
 		return SUCCESS;
 	}
-	Ret UnsubscribeUr(std::string strUrName, std::string strModuleName)
+	Ret UnsubscribeUr(std::string strUrName, std::string strSubName)
 	{
 		if(!(strUrName.length() <= MAXLEN_NAME))
 			return URC_NAMETOOLONG_ERRORCODE;
 		if(!(strUrName.length() > 0 && strUrName.length() <= MAXLEN_NAME))
 			return INVALIDPARA_ERRORCODE;
-		if(!(strModuleName.length() <= MAXLEN_NAME))
+		if (!(strSubName.length() <= MAXLEN_NAME))
 			return URC_NAMETOOLONG_ERRORCODE;
-		if(!(strModuleName.length() > 0 && strModuleName.length() <= MAXLEN_NAME))
+		if (!(strSubName.length() > 0 && strSubName.length() <= MAXLEN_NAME))
 			return INVALIDPARA_ERRORCODE;
 		//ReadLock lock(m_rwLock);
 		WriteLock lock(m_rwLock);
@@ -1907,16 +2032,63 @@ public:
 		if(iter == m_urcMap.end())
 			return URC_UNEXISTED_ERRORCODE;
 		Swaper* pSwaper = (Swaper*)(iter->second);
-		if(!(pSwaper->m_type == SULOKI_MSGQUEUE_TYPE_URC_BASE))
-			return URC_CANNOTSUB_ERRORCODE;
-		std::map< std::string, InfoSubscribed* >::iterator iterSub = pSwaper->m_subscriberMap.find(strModuleName);
+		//if(!(pSwaper->m_type == SULOKI_MSGQUEUE_TYPE_URC_BASE))
+		//	return URC_CANNOTSUB_ERRORCODE;
+		std::map< std::string, InfoSubscribed* >::iterator iterSub = pSwaper->m_subscriberMap.find(strSubName);
 		if(iterSub == pSwaper->m_subscriberMap.end())
 			return URC_SUBUNEXISTED_ERRORCODE;
 		std::auto_ptr<InfoSubscribed> subSmart(iterSub->second);
 		pSwaper->m_subscriberMap.erase(iterSub);
 		return SUCCESS;
 	}
-	Ret PushMsg(std::string strUrName, std::string strModuleName, std::auto_ptr<suloki::SulokiMessage> msgSmartPtr)
+	Ret NotifyMsgSub(std::string strUrName, std::auto_ptr<SulokiMessage> msgSmart)
+	{
+		if (msgSmart.get() == NULL)
+			return INVALIDPARA_ERRORCODE;
+		if (!(strUrName.length() <= MAXLEN_NAME))
+			return URC_NAMETOOLONG_ERRORCODE;
+		if (!(strUrName.length() > 0 && strUrName.length() <= MAXLEN_NAME))
+			return INVALIDPARA_ERRORCODE;
+		ReadLock lock(m_rwLock);
+		//WriteLock lock(m_rwLock);
+		std::map<std::string, void*>::iterator iter = m_urcMap.find(strUrName);
+		if (iter == m_urcMap.end())
+			return URC_UNEXISTED_ERRORCODE;
+		Swaper* pSwaper = (Swaper*)(iter->second);
+		if (!(pSwaper->m_type == SULOKI_SQLDATA_TYPE_URC_BASE || pSwaper->m_type == SULOKI_NOSQLDATA_TYPE_URC_BASE))
+			return URC_CANNOTSUB_ERRORCODE;
+		for (std::map< std::string, InfoSubscribed* >::iterator iterSub = pSwaper->m_subscriberMap.begin(); iterSub != pSwaper->m_subscriberMap.end(); iterSub++)
+		{
+			InfoSubscribed* pSub = iterSub->second;
+			std::auto_ptr<SulokiContext> contextOriSmart(new SulokiContext);
+			if (contextOriSmart.get() == NULL)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "new SulokiContext error, maybe no memory";
+				continue;
+			}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			NEW_MDEBUG(contextOriSmart.get(), "");
+#endif
+			*contextOriSmart = *(pSub->m_contextOriSmart);
+			//
+			std::auto_ptr<SulokiMessage> msgOriSmart(new SulokiMessage());
+			if (msgOriSmart.get() == NULL)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "new SulokiMessage error, maybe no memory";
+				continue;
+			}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+			NEW_MDEBUG(msgOriSmart.get(), "");
+#endif
+			*msgOriSmart = *msgSmart;
+			//
+			SulokiContext contextNew;
+			pSub->m_cb(contextOriSmart.release(), msgOriSmart, contextNew);
+		}
+		return SUCCESS;
+	}
+	/*
+	Ret PushMsg(std::string strUrName, std::string strModuleName, std::auto_ptr<SulokiMessage> msgSmartPtr)
 	{
 		if (msgSmartPtr.get() == NULL)
 			return INVALIDPARA_ERRORCODE;
@@ -2028,9 +2200,9 @@ protected:
 	//	m_threadPool.Post(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
 	//	return SUCCESS;
 	//}
-	void Handle(std::string strModuleName, suloki::SulokiMessage* pMsg, suloki::SulokiContext& context)
+	void Handle(std::string strModuleName, SulokiMessage* pMsg, SulokiContext& context)
 	{
-		std::auto_ptr< suloki::SulokiMessage > msgSmart(pMsg);
+		std::auto_ptr< SulokiMessage > msgSmart(pMsg);
 		m_threadPool.IncreseRef();
 		if (strModuleName == "main")
 		{
@@ -2041,23 +2213,42 @@ protected:
 		;
 		m_threadPool.DecreseRef();
 	}
-	Ret Post(std::string strModuleName, std::auto_ptr< suloki::SulokiMessage > msgSmart, suloki::SulokiContext& context)
+	Ret Post(std::string strModuleName, std::auto_ptr< SulokiMessage > msgSmart, SulokiContext& context)
 	{
 		m_threadPool.Post(boost::bind(&Urc::Handle, this, strModuleName, msgSmart.release(), context));
 		return SUCCESS;
 	}
-	void HandleFuncRes(Urc::AsyncNewFunc func, suloki::SulokiMessage* pMsg, suloki::SulokiContext& context)
+	void HandleFuncRes(Urc::AsyncNewFunc func, SulokiMessage* pMsg, SulokiContext& context)
 	{
-		std::auto_ptr< suloki::SulokiMessage > msgSmart(pMsg);
+		std::auto_ptr< SulokiMessage > msgSmart(pMsg);
 		m_threadPool.IncreseRef();
 		func(msgSmart, context);
 		m_threadPool.DecreseRef();
 	}
-	Ret PostFuncRes(Urc::AsyncNewFunc func, std::auto_ptr< suloki::SulokiMessage > msgSmart, suloki::SulokiContext& context)
+	Ret PostFuncRes(Urc::AsyncNewFunc func, std::auto_ptr< SulokiMessage > msgSmart, SulokiContext& context)
 	{
 		m_threadPool.Post(boost::bind(&Urc::HandleFuncRes, this, func, msgSmart.release(), context));
 		return SUCCESS;
 	}
+	void HandleSub(std::string strUreName, SulokiMessage* pMsg)
+	{
+		std::auto_ptr< SulokiMessage > msgSmart(pMsg);
+		m_threadPool.IncreseRef();
+		NotifyMsgSub(strUreName, msgSmart);
+		m_threadPool.DecreseRef();
+	}
+	Ret PostSub(std::string strUreName, std::auto_ptr< SulokiMessage > msgSmart)
+	{
+		m_threadPool.Post(boost::bind(&Urc::HandleSub, this, strUreName, msgSmart.release()));
+		return SUCCESS;
+	}
+	//
+#ifdef SULOKI_OPENSOURCE_VERSION_GLOBAL
+#else
+#ifdef SULOKI_FREE_VERSION_GLOBAL
+#else
+#endif
+#endif
 private:
 	Urc(Urc& ref) {}
 	Urc& operator=(Urc& ref) { return *this; }
@@ -2095,6 +2286,7 @@ protected:
 	std::auto_ptr<boost::thread> m_threadRunnedSmart;
 	boost::asio::io_service m_ioService;
 	std::auto_ptr<boost::asio::steady_timer> m_timerSmart;
+	Float m_busyDegree;
 };
 typedef Singleton< Maintancer > MaintancerSingleton;
 

@@ -10,7 +10,8 @@ LIBS    := -L../../../../depend/boost/stage_linux/lib -lboost_system -lboost_thr
 LDFLAGS:=
 DEFINES:= -DSULOKI_64_PLATFORM_SULOKI -DBOOST_LOG_DYN_LINK
 INCLUDE:= -I. -I../../../../depend/boost/ -I../../../../depend/protobuf/src/ -I../../../../proto/  -I../../../../depend/loki/ -I../../../../lib/ -I../../../../depend/websocketpp/ -I../../../../depend/mysql/include/ -I/usr/include/ -I/usr/include/mysql/
-CFLAGS  := -g -fPIC -Wall -O3 $(DEFINES) $(INCLUDE)
+#CFLAGS  := -g -fPIC -Wall -O3 $(DEFINES) $(INCLUDE)
+CFLAGS  := -fPIC -Wall -O3 $(DEFINES) $(INCLUDE)
 CXXFLAGS:= $(CFLAGS) -DHAVE_CONFIG_H
 SHARE   := -fPIC -shared -o
 #i think you should do anything here

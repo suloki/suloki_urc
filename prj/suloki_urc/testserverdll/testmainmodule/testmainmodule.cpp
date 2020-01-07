@@ -7,25 +7,6 @@
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
 
-class MySulokiUrcModuleInterface
-{
-public:
-	static void SetSulokiUrcModuleInterface(SulokiUrcModuleInterface* pSulokiUrcModuleInterface)
-	{
-		m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
-	}
-	static inline SulokiUrcModuleInterface* GetSulokiUrcModuleInterface(void)
-	{
-		return m_pSulokiUrcModuleInterface;
-	}
-private:
-	MySulokiUrcModuleInterface(MySulokiUrcModuleInterface& ref) {}
-	MySulokiUrcModuleInterface& operator=(MySulokiUrcModuleInterface& ref) { return *this; }
-protected:
-	static SulokiUrcModuleInterface* m_pSulokiUrcModuleInterface;
-};
-SulokiUrcModuleInterface* MySulokiUrcModuleInterface::m_pSulokiUrcModuleInterface = NULL;
-
 typedef websocketpp::server<websocketpp::config::asio> WebsocketServer;
 typedef WebsocketServer::message_ptr message_ptr;
 const std::string URC_WSPATH = "/local/wsconnection/";
@@ -37,7 +18,12 @@ public:
 		m_server = server;
 		m_hdl = hdl;
 	}
-	virtual ~WsConnect(){}
+	virtual ~WsConnect()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	WebsocketServer* GetServer(void)
 	{
 		return m_server;
@@ -58,6 +44,9 @@ void OnOpen(WebsocketServer *server, websocketpp::connection_hdl hdl)
 	boost::shared_ptr<WsConnect> wsconnSmartPtr(new WsConnect(server, hdl));
 	if (wsconnSmartPtr.get() == NULL)
 		return;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+	NEW_MDEBUG(wsconnSmartPtr.get(), "")
+#endif
 	std::stringstream strStream;
 	strStream << URC_WSPATH << hdl.lock().get();
 	boost::shared_ptr<BaseRoot> baseSmartPtr = boost::static_pointer_cast<BaseRoot>(wsconnSmartPtr);
@@ -70,26 +59,31 @@ void OnOpen(WebsocketServer *server, websocketpp::connection_hdl hdl)
 }
 void OnClose(WebsocketServer *server, websocketpp::connection_hdl hdl)
 {
-	boost::shared_ptr<WsConnect> wsconnSmartPtr;
 	std::stringstream strStream;
 	strStream << URC_WSPATH << hdl.lock().get();
-	boost::shared_ptr<BaseRoot> baseSmartPtr = boost::static_pointer_cast<BaseRoot>(wsconnSmartPtr);
+	boost::shared_ptr<BaseRoot> baseSmartPtr;
 	if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->DelObject(strStream.str(), baseSmartPtr) != Suloki::SUCCESS)
 	{
 		std::cout << "DelUr error " << __FILE__ << __LINE__ << std::endl;
 		return;
 	}
+	//boost::shared_ptr<WsConnect> connSmartPtr = boost::dynamic_pointer_cast<WsConnect>(baseSmartPtr);
+	//if (connSmartPtr.get() == NULL)
+	//	return;
 	std::cout << "have client disconnected" << std::endl;
 }
-void AsyncFunc(suloki::SulokiContext* pContextOri, std::auto_ptr<suloki::SulokiMessage> msgSmart, suloki::SulokiContext& contextNew)//Suloki::Uint pCcontext, Suloki::Uint msgPtr, bool bTimeout)
+void AsyncFunc(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew)//Suloki::Uint pCcontext, Suloki::Uint msgPtr, bool bTimeout)
 {
-	std::auto_ptr<suloki::SulokiContext> contextSmart(pContextOri);
+	std::auto_ptr<SulokiContext> contextSmart(pContextOri);
+	if(Suloki::Global::GetState() >= Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK)
+		return;
 	//
 	if (!contextNew.has_b())
 	{
 		SULOKI_ERROR_LOG_BASEFRAMEWORK << "contextNew has not b field";
 		return;
 	}
+	//?????
 	if (!contextSmart->has_msgori())
 	{
 		SULOKI_ERROR_LOG_BASEFRAMEWORK << "contextSmart has not msgori field";
@@ -97,20 +91,24 @@ void AsyncFunc(suloki::SulokiContext* pContextOri, std::auto_ptr<suloki::SulokiM
 	}
 	if (contextNew.b())
 	{
-		std::cout << "timeout, businessid:" << contextSmart->msgori().businessid() << ";messageid:" << contextSmart->msgori().messageid() << std::endl;
+		std::cout << "timeout.msg info:" << contextSmart->msgori() << std::endl;// , businessid:" << contextSmart->msgori().businessid() << "; messageid:" << contextSmart->msgori().messageid() << std::endl;
 		return;
 	}
 	//
-	if (msgSmart->businessid() == SULOKI_URC_BISINESSID_PROTO && msgSmart->messageid() == SULOKI_SQL_MESSAGEID_URC_PROTO && msgSmart->messagetype() == suloki::SulokiMessage::response)
+	if (msgSmart->businessid() == SULOKI_URC_BISINESSID_PROTO && msgSmart->messageid() == SULOKI_SQL_MESSAGEID_URC_PROTO && msgSmart->messagetype() == SulokiMessage::response)
 	{
 		std::cout << "async sql query res in AsyncFunc" << std::endl;
 		suloki::SulokiSqlResUrcMsgBody resBody;
-		Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiSqlResUrcMsgBody>(*msgSmart, resBody);
+		if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiSqlResUrcMsgBody>(*msgSmart, resBody) != Suloki::SUCCESS)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiSqlResUrcMsgBody error";
+			return;
+		}
 		for (int i = 0; i < resBody.sqlres_size(); i++)
 		{
 			const suloki::SulokiSqlResItemUrcMsgBody& bodyitem = resBody.sqlres(i);
 			for (int j = 0; j < bodyitem.sqlresitem_size(); j++)
-				std::cout << bodyitem.sqlresitem(j) << std::endl;
+				;//std::cout << bodyitem.sqlresitem(j) << std::endl;
 		}
 	}
 	//
@@ -131,7 +129,7 @@ void AsyncFunc(suloki::SulokiContext* pContextOri, std::auto_ptr<suloki::SulokiM
 	boost::shared_ptr<WsConnect> connSmartPtr = boost::dynamic_pointer_cast<WsConnect>(baseSmartPtr);
 	if (connSmartPtr.get() == NULL)
 		return;
-	connSmartPtr->GetServer()->send(connSmartPtr->GetHdl(), "test ok", websocketpp::frame::opcode::text);
+	//connSmartPtr->GetServer()->send(connSmartPtr->GetHdl(), "test ok", websocketpp::frame::opcode::text);
 	/*
 	std::string wsconnUrName;
 	{//pop router
@@ -160,6 +158,30 @@ void AsyncFunc(suloki::SulokiContext* pContextOri, std::auto_ptr<suloki::SulokiM
 	connSmartPtr->GetServer()->send(connSmartPtr->GetHdl(), "test ok", websocketpp::frame::opcode::text);
 	*/
 }
+void AsyncFuncSub(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew)//Suloki::Uint pCcontext, Suloki::Uint msgPtr, bool bTimeout)
+{
+	std::auto_ptr<SulokiContext> contextSmart(pContextOri);
+	if (Suloki::Global::GetState() >= Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK)
+		return;
+	//
+	if (msgSmart.get() == NULL)
+	{
+		std::cout << "msgSmart is NULL error" << std::endl;
+		return;
+	}
+	if (msgSmart->messagetype() != SulokiMessage::push)
+	{
+		std::cout << "is not push msg type error, type:" << msgSmart->messagetype() << std::endl;
+		return;
+	}
+	//
+	if (!contextSmart->has_urname())
+	{
+		std::cout << "context has not urname field error" << std::endl;
+		return;
+	}
+	;
+}
 void OnMessage(WebsocketServer *server, websocketpp::connection_hdl hdl, message_ptr msg)
 {
 	/*
@@ -171,49 +193,53 @@ void OnMessage(WebsocketServer *server, websocketpp::connection_hdl hdl, message
 	//
 	server->send(hdl, strRespon, websocketpp::frame::opcode::text);
 	*/
-	{//remoted sql query sync
-		suloki::SulokiMessage req;
-		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
-		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
-		req.set_messageid(SULOKI_SQL_MESSAGEID_URC_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
-		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
-		/*
-		std::stringstream strStream;
-		strStream << URC_WSPATH << hdl.lock().get();
-		req.add_routers(strStream.str());
-		*/
-		suloki::SulokiSqlReqUrcMsgBody body;
-		body.set_urckey(Suloki::SULOKI_SQL_NAME_URC_BASE);
-		body.set_urcsql("select * from user_v");
-		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiSqlReqUrcMsgBody>(req, body);
-		//std::string strMsg;
-		//SulokiProtoSwrap::EncodeProtocol<suloki::SulokiOperatorUrcMsgBody>(req, body, strMsg);
-		//if (Suloki::UrcSingleton::Instance().GetUr("/remoted/sqldata", req, 1000) != Suloki::SUCCESS)
-		//	std::cout << "sync GetUr sql data error" << std::endl;
-		//else
-		//	std::cout << "sync GetUr sql data ok" << std::endl;
-		if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetSqlData("/remoted/sqldata", req, 1000) != Suloki::SUCCESS)
-			std::cout << "sync GetUr sql data error" << std::endl;
-		else
-		{
-			std::cout << "sync GetUr sql data ok" << std::endl;
-			suloki::SulokiSqlResUrcMsgBody resBody;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiSqlResUrcMsgBody>(req, resBody);
-			for (int i = 0; i < resBody.sqlres_size(); i++)
+	for (Suloki::Int i = 0; i < 1; i++)
+	{
+		Suloki::Ret ret = Suloki::SUCCESS;
+		{//remoted sql query sync
+			SulokiMessage req;
+			Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
+			req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
+			req.set_messageid(SULOKI_SQL_MESSAGEID_URC_PROTO);
+			req.set_messagetype(SulokiMessage::request);
+			req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
+			/*
+			std::stringstream strStream;
+			strStream << URC_WSPATH << hdl.lock().get();
+			req.add_routers(strStream.str());
+			*/
+			suloki::SulokiSqlReqUrcMsgBody body;
+			body.set_urckey(Suloki::SULOKI_SQL_NAME_URC_BASE);
+			body.set_urcsql("select * from user_v");
+			Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiSqlReqUrcMsgBody>(req, body);
+			//std::string strMsg;
+			//SulokiProtoSwrap::EncodeProtocol<suloki::SulokiOperatorUrcMsgBody>(req, body, strMsg);
+			//if (Suloki::UrcSingleton::Instance().GetUr("/remoted/sqldata", req, 1000) != Suloki::SUCCESS)
+			//	std::cout << "sync GetUr sql data error" << std::endl;
+			//else
+			//	std::cout << "sync GetUr sql data ok" << std::endl;
+			ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetSqlData("/remoted/sqldata", req, 3000);
+			if (ret != Suloki::SUCCESS)
+				std::cout << "sync GetUr sql data error, error code:" << ret << std::endl;
+			else
 			{
-				const suloki::SulokiSqlResItemUrcMsgBody& bodyitem = resBody.sqlres(i);
-				for (int j = 0; j < bodyitem.sqlresitem_size(); j++)
-					std::cout << bodyitem.sqlresitem(j) << std::endl;
+				std::cout << "sync GetUr sql data ok" << std::endl;
+				suloki::SulokiSqlResUrcMsgBody resBody;
+				Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiSqlResUrcMsgBody>(req, resBody);
+				for (int i = 0; i < resBody.sqlres_size(); i++)
+				{
+					const suloki::SulokiSqlResItemUrcMsgBody& bodyitem = resBody.sqlres(i);
+					for (int j = 0; j < bodyitem.sqlresitem_size(); j++)
+						;//std::cout << bodyitem.sqlresitem(j) << std::endl;
+				}
 			}
 		}
-	}
 	{//remoted sql query async
-		suloki::SulokiMessage req;
+		SulokiMessage req;
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 		req.set_businessid(SULOKI_URC_BISINESSID_PROTO);
 		req.set_messageid(SULOKI_SQL_MESSAGEID_URC_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
+		req.set_messagetype(SulokiMessage::request);
 		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		//
 		//std::stringstream strStream;
@@ -224,44 +250,56 @@ void OnMessage(WebsocketServer *server, websocketpp::connection_hdl hdl, message
 		body.set_urckey(Suloki::SULOKI_SQL_NAME_URC_BASE);
 		body.set_urcsql("select * from user_v");
 		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiSqlReqUrcMsgBody>(req, body);
-		//Suloki::Urc<>::AsyncFunc asyncCb = boost::bind(&MyAppStateMachine::AsyncFunc, this, 0, _1, _1);
-		std::auto_ptr<suloki::SulokiContext> contextOriSmart(new suloki::SulokiContext);
+		//Suloki::Urc<>::AsyncFunc asyncCb = boost::bind(&MyModuleStateMachine::AsyncFunc, this, 0, _1, _1);
+		std::auto_ptr<SulokiContext> contextOriSmart(new SulokiContext);
 		if (contextOriSmart.get() == NULL)
 			return;
-		suloki::SulokiMessage* pMsgBack = contextOriSmart->mutable_msgori();
-		if (pMsgBack == NULL)
-			return;
-		Suloki::SulokiProtoSwrap::MakeSimpleCopy(req, *pMsgBack);
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(contextOriSmart.get(), "")
+#endif
+			//?????
+			//SulokiMessage* pMsgBack = contextOriSmart->mutable_msgori();
+			//if (pMsgBack == NULL)
+			//	return;
+			//Suloki::SulokiProtoSwrap::MakeSimpleCopy(req, *pMsgBack);
+		{
+			std::stringstream strStream;
+			strStream << "businessid:" << req.businessid() << ";messageid:" << req.messageid();
+			contextOriSmart->set_msgori(strStream.str());
+		}
 		std::stringstream strStream;
 		strStream << URC_WSPATH << hdl.lock().get();
 		contextOriSmart->set_urname(strStream.str());
-		if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetSqlData("/remoted/sqldata", req, 1000, AsyncFunc, contextOriSmart) != Suloki::SUCCESS)
-			std::cout << "async GetUr sql data error" << std::endl;
+		ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetSqlData("/remoted/sqldata", req, 3000, AsyncFunc, contextOriSmart);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "async GetUr sql data error, error code:" << ret << std::endl;
 		else
 			std::cout << "async GetUr sql data ok" << std::endl;
 	}
 	//
 	{//remoted nosql add sync
 		std::string strVal = "nosqldata_val";
-		if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->AddNoSqlData("/remoted/nosqldatakey", strVal, false, 1000) != Suloki::SUCCESS)
-			std::cout << "sync AddUr nosql data error" << std::endl;
+		ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->AddNoSqlData("/remoted/nosqldatakey", strVal, false, 5000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync AddUr nosql data error, error code:" << ret << std::endl;
 		else
 			std::cout << "sync AddUr nosql data ok" << std::endl;
 	}
-	{//remoted nosql add sync
+	{//remoted nosql get sync
 		std::string strVal = "";
-		if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetNoSqlData("/remoted/nosqldatakey", strVal, 1000) != Suloki::SUCCESS)
-			std::cout << "sync GetUr nosql data error" << std::endl;
+		ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->GetNoSqlData("/remoted/nosqldatakey", strVal, 8000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync GetUr nosql data error, error code:" << ret << std::endl;
 		else
 			std::cout << "sync GetUr nosql data ok, val=" << strVal << std::endl;
 	}
 	//
 	{//req to a server sync
-		suloki::SulokiMessage req;
+		SulokiMessage req;
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 		req.set_businessid(SULOKI_SYSTEM_BISINESSID_PROTO);
 		req.set_messageid(SULOKI_TEST_MESSAGEID_SYSTEM_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
+		req.set_messagetype(SulokiMessage::request);
 		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		/*
 		std::stringstream strStream;
@@ -271,17 +309,18 @@ void OnMessage(WebsocketServer *server, websocketpp::connection_hdl hdl, message
 		suloki::SulokiTestMsgBody body;
 		body.set_test("testreq");
 		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiTestMsgBody>(req, body);
-		if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->ReqRes("testgroup", "testserver0", req, 1000) != Suloki::SUCCESS)
-			std::cout << "sync ReqRes to service error" << std::endl;
+		ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->ReqRes("testgroup", "testserver0", req, 10000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync ReqRes to service error, error code:" << ret << std::endl;
 		else
 			std::cout << "sync ReqRes to service ok" << std::endl;
 	}
 	{//req to a server sync
-		suloki::SulokiMessage req;
+		SulokiMessage req;
 		Suloki::SulokiProtoSwrap::MakeBaseMessage(req);
 		req.set_businessid(SULOKI_SYSTEM_BISINESSID_PROTO);
 		req.set_messageid(SULOKI_TEST_MESSAGEID_SYSTEM_PROTO);
-		req.set_messagetype(suloki::SulokiMessage::request);
+		req.set_messagetype(SulokiMessage::request);
 		req.set_sequencenumber(Suloki::IdManagerSingleton::Instance().GetFreeId());
 		/*
 		std::stringstream strStream;
@@ -291,22 +330,59 @@ void OnMessage(WebsocketServer *server, websocketpp::connection_hdl hdl, message
 		suloki::SulokiTestMsgBody body;
 		body.set_test("testreq");
 		Suloki::SulokiProtoSwrap::SetBody<suloki::SulokiTestMsgBody>(req, body);
-		if (MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->ReqRes("testgroup", "", req, 1000) != Suloki::SUCCESS)
-			std::cout << "sync ReqRes to service error" << std::endl;
+		ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->ReqRes("testgroup", "", req, 10000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync ReqRes to service error, error code:" << ret << std::endl;
 		else
 			std::cout << "sync ReqRes to service ok" << std::endl;
 	}
+	{//sub
+		Suloki::Ret ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->Subscribe("/remoted/nosqldatakey", "testsub", 8000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync Subscribe error, error code:" << ret << std::endl;
+		else
+			std::cout << "sync Subscribe ok" << std::endl;
+		std::string strVal = "nosqldata_val1";
+		ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->UpdateNoSqlData("/remoted/nosqldatakey", strVal, 8000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync UpdateNoSqlData data error, error code:" << ret << std::endl;
+		else
+			std::cout << "sync UpdateNoSqlData data ok, val=" << strVal << std::endl;
+	}
+	{//unsub
+		Suloki::Ret ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->Unsubscribe("/remoted/nosqldatakey", "testsub", 8000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync Unsubscribe error, error code:" << ret << std::endl;
+		else
+			std::cout << "sync Unsubscribe ok" << std::endl;
+	}
+	{//del
+		std::string strVal;
+		Suloki::Ret ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->DelNoSqlData("/remoted/nosqldatakey", strVal, 8000);
+		if (ret != Suloki::SUCCESS)
+			std::cout << "sync DelNoSqlData error, error code:" << ret << std::endl;
+		else
+			std::cout << "sync DelNoSqlData ok" << std::endl;
+	}
+	Suloki::Sleep(1000);
+	}
+	server->send(hdl, "test have completed", websocketpp::frame::opcode::text);
 }
 
-class MyAppStateMachine : public Suloki::AppStateMachine
+class MyModuleStateMachine : public Suloki::AppStateMachine
 {
 public:
-	MyAppStateMachine()
+	MyModuleStateMachine()
 	{}
-	virtual ~MyAppStateMachine()
-	{}
+	virtual ~MyModuleStateMachine()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	virtual Suloki::Ret Init(void)
 	{
+#ifdef SULOKI_WINDOWS_OS_SULOKI
 		Suloki::ConfigSingleton::Instance().SetConfig(Suloki::SULOKI_LOGNAME_KEY_CONFIG_BASE, "testmainmodule");
 		//Suloki::ConfigSingleton::Instance().SetConfig(Suloki::SULOKI_LOGLEVEL_KEY_CONFIG_BASE, Suloki::LOG_INFO_LEVEL);
 		try{
@@ -329,9 +405,18 @@ public:
 		if (Suloki::AppStateMachine::Init() != 0)
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "AppStateMachine::Init error";
-			return 1;
+			return Suloki::FAIL;
 		}
-		//
+#endif
+		m_serverSmart = std::auto_ptr<WebsocketServer>(new WebsocketServer());
+		if(m_serverSmart.get() == NULL)
+		{
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "create WebsocketServer error";
+			return Suloki::FAIL;
+		}
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(m_serverSmart.get(), "")
+#endif
 		;
 		Suloki::Global::SetState(Suloki::INIT_GLOBALSTATE_BASEFRAMEWORK);
 		//
@@ -346,10 +431,44 @@ public:
 			return 1;
 		}
 		//
+		try {
+			// Set logging settings
+			m_serverSmart->set_access_channels(websocketpp::log::alevel::all);
+			m_serverSmart->clear_access_channels(websocketpp::log::alevel::frame_payload);
+
+			// Initialize ASIO
+			m_serverSmart->init_asio();
+
+			// Register our open handler
+			m_serverSmart->set_open_handler(bind(&OnOpen, m_serverSmart.get(), ::_1));
+
+			// Register our close handler
+			m_serverSmart->set_close_handler(bind(&OnClose, m_serverSmart.get(), ::_1));
+
+			// Register our message handler
+			m_serverSmart->set_message_handler(bind(&OnMessage, m_serverSmart.get(), ::_1, ::_2));
+
+			//Listen on port 2152
+			m_serverSmart->listen(9002);
+
+			//Start the server accept loop
+			m_serverSmart->start_accept();
+		}
+		catch (websocketpp::exception const & e) {
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "websocketpp::exception, " << e.what();
+			exit(1);
+		}
+		catch (...) {
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "websocketpp other exception";
+			exit(1);
+		}
 		;
-		m_threadRunnedSmart = std::auto_ptr<boost::thread>(new boost::thread(boost::bind(&MyAppStateMachine::FuncThread, this)));
+		m_threadRunnedSmart = std::auto_ptr<boost::thread>(new boost::thread(boost::bind(&MyModuleStateMachine::FuncThread, this)));
 		if (m_threadRunnedSmart.get() == NULL)
 			return Suloki::FAIL;
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		NEW_MDEBUG(m_threadRunnedSmart.get(), "")
+#endif
 		;
 		Suloki::Global::SetState(Suloki::START_GLOBALSTATE_BASEFRAMEWORK);
 		SULOKI_INFO_LOG_BASEFRAMEWORK << "testmainmodule start successfully";
@@ -365,9 +484,20 @@ public:
 		//
 		Suloki::Global::SetState(Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK);
 		;
-		m_server.stop();
+		m_serverSmart->stop();
+		//m_serverSmart.reset(NULL);
+//#ifdef SULOKI_WINDOWS_OS_SULOKI
 		if (m_threadRunnedSmart.get() != NULL)
 			m_threadRunnedSmart->join();
+//#endif
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(m_serverSmart.get())
+		m_serverSmart.reset(NULL);
+#endif
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(m_threadRunnedSmart.get())
+		m_threadRunnedSmart.reset(NULL);
+#endif
 		;
 		return AppStateMachine::Stop();
 	}
@@ -377,7 +507,7 @@ public:
 		//
 		Suloki::Global::SetState(Suloki::CLEAR_GLOBALSTATE_BASEFRAMEWORK);
 		;
-
+		Suloki::IdManagerSingleton::Deinstance();
 		;
 		return AppStateMachine::Clear();
 	}
@@ -388,48 +518,28 @@ protected:
 		//server echo_server;
 
 		try {
-			// Set logging settings
-			m_server.set_access_channels(websocketpp::log::alevel::all);
-			m_server.clear_access_channels(websocketpp::log::alevel::frame_payload);
-
-			// Initialize ASIO
-			m_server.init_asio();
-
-			// Register our open handler
-			m_server.set_open_handler(bind(&OnOpen, &m_server, ::_1));
-
-			// Register our close handler
-			m_server.set_close_handler(bind(&OnClose, &m_server, ::_1));
-
-			// Register our message handler
-			m_server.set_message_handler(bind(&OnMessage, &m_server, ::_1, ::_2));
-
-			//Listen on port 2152
-			m_server.listen(9002);
-
-			//Start the server accept loop
-			m_server.start_accept();
-
 			//Start the ASIO io_service run loop
-			m_server.run();
+			m_serverSmart->run();
 		}
 		catch (websocketpp::exception const & e) {
-			std::cout << e.what() << std::endl;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "websocketpp::exception, " << e.what();
+			exit(1);
 		}
 		catch (...) {
-			std::cout << "other exception" << std::endl;
+			SULOKI_ERROR_LOG_BASEFRAMEWORK << "websocketpp other exception";
+			exit(1);
 		}
 	}
 private:
-	MyAppStateMachine(MyAppStateMachine& ref) {}
-	MyAppStateMachine& operator=(MyAppStateMachine& ref) { return *this; }
+	MyModuleStateMachine(MyModuleStateMachine& ref) {}
+	MyModuleStateMachine& operator=(MyModuleStateMachine& ref) { return *this; }
 private:
 	std::auto_ptr<boost::thread> m_threadRunnedSmart;
-	WebsocketServer m_server;
+	std::auto_ptr<WebsocketServer> m_serverSmart;
 };
-typedef Suloki::Singleton<MyAppStateMachine> MyAppStateMachineSingleton;
+typedef Suloki::Singleton<MyModuleStateMachine> MyModuleStateMachineSingleton;
 
-class MyDispatcher : public Suloki::Dispatcher<suloki::SulokiMessage, suloki::SulokiContext>
+class MyDispatcher : public Suloki::Dispatcher<SulokiMessage, SulokiContext>
 {
 public:
 	MyDispatcher()
@@ -448,47 +558,65 @@ public:
 			sStream << SULOKI_SYSTEM_BISINESSID_PROTO << "_" << SULOKI_TEST_MESSAGEID_SYSTEM_PROTO;
 			m_syncMsgHandlerMapSimple[sStream.str()] = HandlerFunctorSimple(this, &MyDispatcher::Handler_System_Test);
 		}
+		{
+			std::stringstream sStream;
+			sStream << SULOKI_URC_BISINESSID_PROTO << "_" << SULOKI_CONNTOURCSERVEROK_MESSAGEID_URC_PROTO;
+			m_syncMsgHandlerMapSimple[sStream.str()] = HandlerFunctorSimple(this, &MyDispatcher::Handler_Urc_Connok);
+		}
+		{
+			std::stringstream sStream;
+			sStream << SULOKI_URC_BISINESSID_PROTO << "_" << SULOKI_UPDATE_MESSAGEID_URC_PROTO;
+			m_syncMsgHandlerMapSimple[sStream.str()] = HandlerFunctorSimple(this, &MyDispatcher::Handler_Urc_Update);
+		}
 	}
 	virtual ~MyDispatcher()
-	{}
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	//void SetSulokiUrcModuleInterface(SulokiUrcModuleInterface* pSulokiUrcModuleInterface)
 	//{
 	//	m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
 	//}
 protected:
-	virtual std::string CalKey(suloki::SulokiMessage& msg)
+	virtual std::string CalKey(SulokiMessage& msg)
 	{
 		std::stringstream sStream;
 		sStream << msg.businessid() << "_" << msg.messageid();
 		return sStream.str();// protocolReq.m_msgKey;
 	}
-	virtual Suloki::Ret HandleUnmatched(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	virtual Suloki::Ret HandleUnmatched(SulokiMessage& msg, SulokiContext& context)
 	{
 		std::cout << "some msg have not handler, businessid:" << msg.businessid() << ";messageid:" << msg.messageid() << std::endl;
 		return Suloki::FAIL;
 	}
 protected:
-	static void AsyncFunc(suloki::SulokiContext* pContextOri, std::auto_ptr<suloki::SulokiMessage> msgSmart, suloki::SulokiContext& contextNew)//Suloki::Uint pCcontext, Suloki::Uint msgPtr, bool bTimeout)
+	/*
+	static void AsyncFunc(SulokiContext* pContextOri, std::auto_ptr<SulokiMessage> msgSmart, SulokiContext& contextNew)//Suloki::Uint pCcontext, Suloki::Uint msgPtr, bool bTimeout)
 	{
+		std::auto_ptr<SulokiContext> contextSmart(pContextOri);
+		if(Suloki::Global::GetState() >= Suloki::STOP_GLOBALSTATE_BASEFRAMEWORK)
+			return;
 		if (!contextNew.has_b())
 		{
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "contextNew has not b field";
 			return;
 		}
-		std::auto_ptr<suloki::SulokiContext> contextSmart(pContextOri);
 		std::cout << "AsyncFunc,timeout:" << contextNew.b() << std::endl;
 	}
-	//Suloki::Ret Handler_SYSTEM_TEST1(suloki::SulokiMessage& protocolReq, suloki::SulokiContext& paraIn, suloki::SulokiMessage& protocolRes, suloki::SulokiContext& paraOut)
+	*/
+	//Suloki::Ret Handler_SYSTEM_TEST1(SulokiMessage& protocolReq, SulokiContext& paraIn, SulokiMessage& protocolRes, SulokiContext& paraOut)
 	//{
 	//	std::cout << "Handler_SYSTEM_TEST1" << std::endl;
 	//	return Suloki::SUCCESS;
 	//}
-	Suloki::Ret Handler_System_Start(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_System_Start(SulokiMessage& msg, SulokiContext& context)
 	{
 		//std::cout << "recv system start msg" << std::endl;
 		return Suloki::SUCCESS;
 	}
-	Suloki::Ret Handler_System_Test(suloki::SulokiMessage& msg, suloki::SulokiContext& context)
+	Suloki::Ret Handler_System_Test(SulokiMessage& msg, SulokiContext& context)
 	{
 		std::cout << "recv system test msg" << std::endl;
 		if (!context.has_b())
@@ -496,12 +624,16 @@ protected:
 			SULOKI_ERROR_LOG_BASEFRAMEWORK << "context has not b field";
 			return Suloki::FAIL;
 		}
-		if (context.b() && msg.messagetype() == suloki::SulokiMessage::request)
+		if (context.b() && msg.messagetype() == SulokiMessage::request)
 		{
 			suloki::SulokiTestMsgBody body;
-			Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiTestMsgBody>(msg, body);
+			if(Suloki::SulokiProtoSwrap::GetBody<suloki::SulokiTestMsgBody>(msg, body) != Suloki::SUCCESS)
+			{
+				SULOKI_ERROR_LOG_BASEFRAMEWORK << "GetBody SulokiTestMsgBody error";
+				return Suloki::FAIL;
+			}
 			//
-			suloki::SulokiMessage res;
+			SulokiMessage res;
 			Suloki::SulokiProtoSwrap::MakeResMessage(msg, res);
 			res.set_errorcode(Suloki::SUCCESS);
 			suloki::SulokiTestMsgBody resBody;
@@ -524,6 +656,30 @@ protected:
 		}
 		return Suloki::FAIL;
 	}
+	Suloki::Ret Handler_Urc_Connok(SulokiMessage& msg, SulokiContext& context)
+	{
+		//std::cout << "recv urc conn ok msg" << std::endl;
+		//Suloki::Ret ret = MySulokiUrcModuleInterface::GetSulokiUrcModuleInterface()->Subscribe(Suloki::SULOKI_SQL_NAME_URC_BASE, "sqlsub", 8000);
+		//if (ret != Suloki::SUCCESS)
+		//	std::cout << "sync Subscribe " << Suloki::SULOKI_SQL_NAME_URC_BASE << " error, error code:" << ret << std::endl;
+		//else
+		//	std::cout << "sync Subscribe " << Suloki::SULOKI_SQL_NAME_URC_BASE << " ok" << std::endl;
+		return Suloki::SUCCESS;
+	}
+	Suloki::Ret Handler_Urc_Update(SulokiMessage& msg, SulokiContext& context)
+	{
+		std::cout << "recv urc update msg" << std::endl;
+		if (msg.messagetype() == SulokiMessage::push)
+		{
+			std::cout << "recv urc update push msg,";
+			if (msg.has_urckey())
+				std::cout << "urc name:" << msg.urckey();
+			if (msg.has_urcval())
+				std::cout << ",urc val:" << msg.urcval();
+			std::cout << std::endl;
+		}
+		return Suloki::SUCCESS;
+	}
 protected:
 	//SulokiUrcModuleInterface* m_pSulokiUrcModuleInterface;
 };
@@ -532,19 +688,24 @@ class MySulokiHandleModule : public SulokiHandleModuleInterface
 public:
 	//explicit MySulokiHandleModule(std::string moduleName){}
 	MySulokiHandleModule(){}
-	virtual ~MySulokiHandleModule(){}
+	virtual ~MySulokiHandleModule()
+	{
+#ifdef SULOKI_MEMALLOCATOR_DEBUG_BASEFRAMEWORK
+		DEL_MDEBUG(this)
+#endif
+	}
 	//
 	virtual SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig)
 	{
-		MySulokiUrcModuleInterface::SetSulokiUrcModuleInterface(pSulokiUrcModuleInterface);
+		//MySulokiUrcModuleInterface::SetSulokiUrcModuleInterface(pSulokiUrcModuleInterface);
 		//m_sulokiUrcModuleInterfaceSmart = sulokiUrcModuleInterfaceSmart;
 		//m_pSulokiUrcModuleInterface = pSulokiUrcModuleInterface;
 		//m_dispatcher.SetSulokiUrcModuleInterface(m_pSulokiUrcModuleInterface);
 		return Suloki::SUCCESS;
 	}
 	virtual SulokiRet Start(void){ return Suloki::SUCCESS; }
-	virtual SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg){ return Suloki::SUCCESS; }
-	virtual SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context)
+	virtual SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg){ return Suloki::SUCCESS; }
+	virtual SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context)
 	{
 		return m_dispatcher.Handle(*msgSmart, context);
 	}
@@ -566,9 +727,10 @@ typedef Suloki::Singleton<MySulokiHandleModule> MySulokiHandleModuleSingleton;
 
 TESTMAINMODULE_API SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrcModuleInterface, SULOKI_IN std::string groupName, SULOKI_IN std::string serviceName, SULOKI_IN std::string strModuleName, SULOKI_IN std::string strConfig)
 {
-	if (MyAppStateMachineSingleton::Instance().Init() != 0)
+	MySulokiUrcModuleInterface::SetSulokiUrcModuleInterface(pSulokiUrcModuleInterface);
+	if (MyModuleStateMachineSingleton::Instance().Init() != 0)
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyAppStateMachineSingleton::Instance().Init() error";
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyModuleStateMachineSingleton::Instance().Init() error";
 		return -1;
 	}
 	//return SULOKI_SUCCESS;
@@ -576,30 +738,34 @@ TESTMAINMODULE_API SulokiRet Init(SULOKI_IN SulokiUrcModuleInterface* pSulokiUrc
 }
 TESTMAINMODULE_API SulokiRet Start(void)
 {
-	if (MyAppStateMachineSingleton::Instance().Start() != 0)
+	if (MyModuleStateMachineSingleton::Instance().Start() != 0)
 	{
-		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyAppStateMachineSingleton::Instance().Start() error";
+		SULOKI_ERROR_LOG_BASEFRAMEWORK << "MyModuleStateMachineSingleton::Instance().Start() error";
 		return -1;
 	}
 	return MySulokiHandleModuleSingleton::Instance().Start();
 }
-TESTMAINMODULE_API SulokiRet TestValid(SULOKI_IN const suloki::SulokiMessage& msg)
+TESTMAINMODULE_API SulokiRet TestValid(SULOKI_IN const SulokiMessage& msg)
 {
 	return MySulokiHandleModuleSingleton::Instance().TestValid(msg);
 }
-TESTMAINMODULE_API SulokiRet Handle(SULOKI_IN std::auto_ptr< suloki::SulokiMessage > msgSmart, SULOKI_IN suloki::SulokiContext& context)
+TESTMAINMODULE_API SulokiRet Handle(SULOKI_IN std::auto_ptr< SulokiMessage > msgSmart, SULOKI_IN SulokiContext& context)
 {
 	return MySulokiHandleModuleSingleton::Instance().Handle(msgSmart, context);
 }
 TESTMAINMODULE_API SulokiRet Stop(void)
 {
-	MyAppStateMachineSingleton::Instance().Stop();
-	return MySulokiHandleModuleSingleton::Instance().Stop();
+	MySulokiHandleModuleSingleton::Instance().Stop();
+	MyModuleStateMachineSingleton::Instance().Stop();
+	return Suloki::SUCCESS;
 }
 TESTMAINMODULE_API SulokiRet Clear(void)
 {
-	MyAppStateMachineSingleton::Instance().Clear();
-	return MySulokiHandleModuleSingleton::Instance().Clear();
+	MySulokiHandleModuleSingleton::Instance().Clear();
+	MySulokiHandleModuleSingleton::Deinstance();
+	MyModuleStateMachineSingleton::Instance().Clear();
+	MyModuleStateMachineSingleton::Deinstance();
+	return Suloki::SUCCESS;
 }
 
 /*

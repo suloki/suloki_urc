@@ -20,7 +20,8 @@ DEFINES:= -DSULOKI_64_PLATFORM_SULOKI -DBOOST_LOG_DYN_LINK
 #INCLUDE:= -I. -I../../depend/boost/ -I../ -I../../depend/gtest/include/
 #INCLUDE:= -I. -I../../depend/boost/ -I../ -I../../depend/protobuf/src/ -I../../proto/ -I../../depend/google-coredumper/src/
 INCLUDE:= -I. -I../../depend/boost/ -I../../depend/protobuf/src/ -I../../proto/  -I../../depend/loki/ -I../../lib/ -I../../depend/websocketpp/
-CFLAGS  := -g -Wall -O3 $(DEFINES) $(INCLUDE)
+#CFLAGS  := -g -Wall -O3 $(DEFINES) $(INCLUDE)
+CFLAGS  := -Wall -O3 $(DEFINES) $(INCLUDE)
 CXXFLAGS:= $(CFLAGS) -DHAVE_CONFIG_H
 
 #i think you should do anything here
